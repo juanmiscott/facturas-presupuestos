@@ -1,0 +1,52 @@
+{
+  "name": "factufacil",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Panel de facturas y presupuestos para construcción",
+  "author": "Jhony Sandro Claros Sanjines",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder --win",
+    "electron:start": "electron ."
+  },
+  "dependencies": {
+    "html2pdf.js": "^0.10.1",
+    "nodemailer": "^6.9.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "vite": "^5.1.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.factufacil.app",
+    "productName": "FactuFácil",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/nodemailer/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "installerIcon": "electron/icon.png",
+      "uninstallerIcon": "electron/icon.png",
+      "shortcutName": "FactuFácil"
+    }
+  }
+}
