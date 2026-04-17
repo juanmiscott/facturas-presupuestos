@@ -1,9 +1,24 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const nodemailer = require("nodemailer");
 
 // Detect if running in dev or production
 const isDev = !app.isPackaged;
+
+// ─── Persistent storage ─────────────────────────────────
+let store;
+async function initStore() {
+  const Store = (await import("electron-store")).default;
+  store = new Store({
+    name: "factufacil-data",
+    defaults: {
+      docs: [],
+      company: null,
+      catalogo: null,
+    },
+  });
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -28,6 +43,62 @@ function createWindow() {
 
   win.setMenuBarVisibility(false);
 }
+
+// ─── Data persistence handlers ──────────────────────────
+ipcMain.handle("store-get", (_event, key) => {
+  if (!store) return null;
+  return store.get(key);
+});
+
+ipcMain.handle("store-set", (_event, key, value) => {
+  if (!store) return;
+  store.set(key, value);
+});
+
+// ─── Export / Import backup ─────────────────────────────
+ipcMain.handle("export-data", async () => {
+  if (!store) return { success: false, error: "Store no inicializado" };
+  const win = BrowserWindow.getFocusedWindow();
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: "Exportar copia de seguridad",
+    defaultPath: `factufacil-backup-${new Date().toISOString().split("T")[0]}.json`,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (canceled || !filePath) return { success: false, error: "Cancelado" };
+  try {
+    const data = {
+      docs: store.get("docs") || [],
+      company: store.get("company") || null,
+      catalogo: store.get("catalogo") || null,
+      exportedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    return { success: true, path: filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("import-data", async () => {
+  if (!store) return { success: false, error: "Store no inicializado" };
+  const win = BrowserWindow.getFocusedWindow();
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: "Importar copia de seguridad",
+    filters: [{ name: "JSON", extensions: ["json"] }],
+    properties: ["openFile"],
+  });
+  if (canceled || !filePaths.length) return { success: false, error: "Cancelado" };
+  try {
+    const raw = fs.readFileSync(filePaths[0], "utf-8");
+    const data = JSON.parse(raw);
+    if (data.docs) store.set("docs", data.docs);
+    if (data.company) store.set("company", data.company);
+    if (data.catalogo) store.set("catalogo", data.catalogo);
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: "Archivo no válido: " + err.message };
+  }
+});
 
 // ─── Email handler ──────────────────────────────────────
 ipcMain.handle("send-email", async (_event, data) => {
@@ -77,7 +148,10 @@ ipcMain.handle("send-email", async (_event, data) => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  await initStore();
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

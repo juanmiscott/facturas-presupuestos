@@ -3,7 +3,7 @@ import html2pdf from "html2pdf.js";
 
 // ─── Data defaults ──────────────────────────────────────
 const INITIAL_COMPANY = {
-  nombre: "JHONY SANDRO CLAROS SALINAS",
+  nombre: "JHONNY SANDRO CLAROS SANJINES",
   dni: "43454553L",
   direccion: "CALLE ARAGÓN Nº 40 1º",
   codigoPostal: "07006",
@@ -114,12 +114,12 @@ function useDownloadPdf () {
 // ─── Sidebar ────────────────────────────────────────────
 function Sidebar ({ view, setView, counts }) {
   const items = [
-    { id: "dashboard", label: "Panel", icon: "📊" },
-    { id: "nueva-factura", label: "Nueva Factura", icon: "🧾" },
+    { id: "dashboard", label: "Panel", icon: "🐈" },
+    { id: "nueva-factura", label: "Nueva Factura", icon: "📋" },
     { id: "nuevo-presupuesto", label: "Nuevo Presupuesto", icon: "📋" },
     { id: "catalogo", label: "Catálogo Precios", icon: "📖" },
-    { id: "historial", label: "Historial", icon: "📁" },
-    { id: "config", label: "Configuración", icon: "⚙️" },
+    { id: "historial", label: "Historial", icon: "🙈" },
+    { id: "config", label: "Configuración", icon: "🍞 " },
   ];
   return (
     <div className="sidebar">
@@ -449,11 +449,17 @@ function DocPreview ({ doc, company, pdfRef }) {
 }
 
 // ─── Document Form ──────────────────────────────────────
-function DocForm ({ tipo, onSave, company, catalogo }) {
-  const [doc, setDoc] = useState(emptyDoc(tipo, company.notaPorDefecto));
+function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
+  const isEditing = !!editingDoc;
+  const [doc, setDoc] = useState(() => {
+    if (editingDoc) {
+      return { ...editingDoc };
+    }
+    return emptyDoc(tipo, company.notaPorDefecto);
+  });
   const [preview, setPreview] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [emailTo, setEmailTo] = useState("");
+  const [emailTo, setEmailTo] = useState(editingDoc?.emailTo || "");
   const [sending, setSending] = useState(false);
   const [emailMsg, setEmailMsg] = useState(null);
   const { ref: pdfRef, download: downloadPdf, toBase64 } = useDownloadPdf();
@@ -479,7 +485,9 @@ function DocForm ({ tipo, onSave, company, catalogo }) {
   const prefijo = tipo === "factura" ? "FACTURA" : "PRESUPUESTO";
 
   const handleSave = () => {
-    onSave({ ...doc, total, subtotal, ivaAmt, emailTo, creadoEn: new Date().toISOString() });
+    const saveData = { ...doc, total, subtotal, ivaAmt, emailTo, creadoEn: new Date().toISOString() };
+    if (isEditing) saveData._editId = editingDoc.id;
+    onSave(saveData);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -497,7 +505,7 @@ function DocForm ({ tipo, onSave, company, catalogo }) {
           <div className="preview-actions-right">
             <button onClick={handleDownload} className="btn btn-outline btn-download">Descargar PDF</button>
             <button onClick={handleSave} className={`btn ${tipo === "factura" ? "btn-primary" : "btn-amber"}`}>
-              Guardar {titulo}
+              {isEditing ? "Actualizar" : "Guardar"} {titulo}
             </button>
           </div>
         </div>
@@ -510,8 +518,8 @@ function DocForm ({ tipo, onSave, company, catalogo }) {
     <div className="form-container">
       <div className="form-header">
         <div>
-          <h2 className="page-title">Nueva {titulo}</h2>
-          <p className="page-subtitle">Rellena los datos y previsualiza antes de guardar</p>
+          <h2 className="page-title">{isEditing ? `Editando ${titulo}` : `Nueva ${titulo}`}</h2>
+          <p className="page-subtitle">{isEditing ? "Modifica los datos y guarda los cambios" : "Rellena los datos y previsualiza antes de guardar"}</p>
         </div>
         {saved && <div className="success-msg">Guardado con éxito</div>}
       </div>
@@ -605,7 +613,7 @@ function DocForm ({ tipo, onSave, company, catalogo }) {
 
       <div className="actions-row">
         <button onClick={() => setPreview(true)} className="btn btn-outline">Previsualizar</button>
-        <button onClick={handleSave} className={`btn ${tipo === "factura" ? "btn-primary" : "btn-amber"}`}>Guardar {titulo}</button>
+        <button onClick={handleSave} className={`btn ${tipo === "factura" ? "btn-primary" : "btn-amber"}`}>{isEditing ? "Actualizar" : "Guardar"} {titulo}</button>
         <button
           disabled={sending || !emailTo}
           className="btn btn-green"
@@ -653,7 +661,7 @@ function DocForm ({ tipo, onSave, company, catalogo }) {
 }
 
 // ─── Dashboard ──────────────────────────────────────────
-function Dashboard ({ docs, company }) {
+function Dashboard ({ docs, company, onEdit }) {
   const facturas = docs.filter((d) => d.tipo === "factura");
   const presupuestos = docs.filter((d) => d.tipo === "presupuesto");
   const totalFacturado = facturas.reduce((s, d) => s + (d.total || 0), 0);
@@ -663,7 +671,7 @@ function Dashboard ({ docs, company }) {
   const { ref: pdfRef, download: downloadPdf } = useDownloadPdf();
 
   const stats = [
-    { label: "Facturas creadas", value: facturas.length, icon: "🧾", color: "blue" },
+    { label: "Facturas creadas", value: facturas.length, icon: "📋", color: "blue" },
     { label: "Presupuestos creados", value: presupuestos.length, icon: "📋", color: "amber" },
     { label: "Total facturado", value: fmt(totalFacturado) + " €", icon: "💰", color: "green" },
     { label: "Total presupuestado", value: fmt(totalPresupuestado) + " €", icon: "📊", color: "purple" },
@@ -699,7 +707,6 @@ function Dashboard ({ docs, company }) {
               <th>Cliente</th>
               <th>Fecha</th>
               <th className="text-right">Total</th>
-              <th className="text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -712,6 +719,9 @@ function Dashboard ({ docs, company }) {
                 <td className="text-right">
                   <button className="btn-table-action" onClick={() => setViewDoc(d)} title="Ver documento">
                     👁 Ver
+                  </button>
+                  <button className="btn-table-action" onClick={() => onEdit(d)} title="Editar documento" style={{ marginLeft: "0.5rem" }}>
+                    ✏️ Editar
                   </button>
                 </td>
               </tr>
@@ -746,7 +756,7 @@ function Dashboard ({ docs, company }) {
         </div>
       ) : (
         <>
-          {renderTable(facturas, "🧾 Facturas")}
+          {renderTable(facturas, "📋 Facturas")}
           {renderTable(presupuestos, "📋 Presupuestos")}
         </>
       )}
@@ -755,12 +765,35 @@ function Dashboard ({ docs, company }) {
 }
 
 // ─── Historial ──────────────────────────────────────────
-function Historial ({ docs, company }) {
-  const facturas = docs.filter((d) => d.tipo === "factura");
-  const presupuestos = docs.filter((d) => d.tipo === "presupuesto");
+function Historial ({ docs, company, onEdit }) {
   const [viewDoc, setViewDoc] = useState(null);
   const [tab, setTab] = useState("facturas");
+  const [busqueda, setBusqueda] = useState("");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const [mostrarFechas, setMostrarFechas] = useState(false);
   const { ref: pdfRef, download: downloadPdf } = useDownloadPdf();
+
+  const filtrar = (list) => {
+    let resultado = list;
+    if (busqueda.trim()) {
+      const q = busqueda.toLowerCase().trim();
+      resultado = resultado.filter((d) =>
+        (d.numero || "").toLowerCase().includes(q) ||
+        (d.cliente?.nombre || "").toLowerCase().includes(q)
+      );
+    }
+    if (fechaDesde) {
+      resultado = resultado.filter((d) => d.fecha >= fechaDesde);
+    }
+    if (fechaHasta) {
+      resultado = resultado.filter((d) => d.fecha <= fechaHasta);
+    }
+    return resultado;
+  };
+
+  const facturas = filtrar(docs.filter((d) => d.tipo === "factura"));
+  const presupuestos = filtrar(docs.filter((d) => d.tipo === "presupuesto"));
 
   if (viewDoc) {
     const prefijo = viewDoc.tipo === "factura" ? "FACTURA" : "PRESUPUESTO";
@@ -768,6 +801,9 @@ function Historial ({ docs, company }) {
       <div>
         <div className="preview-actions">
           <button onClick={() => setViewDoc(null)} className="btn-add-line">← Volver al historial</button>
+          <button onClick={() => { setViewDoc(null); onEdit(viewDoc); }} className="btn btn-outline">
+            ✏️ Editar
+          </button>
           <button
             onClick={() => downloadPdf(`${prefijo}-${viewDoc.numero || "SIN-NUMERO"}.pdf`)}
             className="btn btn-outline btn-download"
@@ -795,10 +831,48 @@ function Historial ({ docs, company }) {
     <div>
       <h2 className="page-title" style={{ marginBottom: "1rem" }}>Historial de documentos</h2>
 
+      <div className="historial-filters">
+        <input
+          className="form-input"
+          placeholder="Buscar por cliente o número..."
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          style={{ flex: 1, maxWidth: "22rem" }}
+        />
+        <button
+          className={`btn ${mostrarFechas ? "btn-primary" : "btn-outline"}`}
+          onClick={() => setMostrarFechas(!mostrarFechas)}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          📅 Filtrar por fecha
+        </button>
+        {(busqueda || fechaDesde || fechaHasta) && (
+          <button
+            className="btn btn-outline"
+            onClick={() => { setBusqueda(""); setFechaDesde(""); setFechaHasta(""); setMostrarFechas(false); }}
+            style={{ whiteSpace: "nowrap" }}
+          >
+            Limpiar filtros
+          </button>
+        )}
+      </div>
+      {mostrarFechas && (
+        <div className="historial-date-filter">
+          <div className="date-field">
+            <label className="form-label">Desde</label>
+            <input type="date" className="form-input" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} />
+          </div>
+          <div className="date-field">
+            <label className="form-label">Hasta</label>
+            <input type="date" className="form-input" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} />
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="tabs-bar">
         <button className={`tab-btn ${tab === "facturas" ? "active" : ""}`} onClick={() => setTab("facturas")}>
-          🧾 Facturas ({facturas.length})
+          📋 Facturas ({facturas.length})
         </button>
         <button className={`tab-btn ${tab === "presupuestos" ? "active" : ""}`} onClick={() => setTab("presupuestos")}>
           📋 Presupuestos ({presupuestos.length})
@@ -807,7 +881,7 @@ function Historial ({ docs, company }) {
 
       {currentList.length === 0 ? (
         <div className="empty-state" style={{ marginTop: "1rem" }}>
-          <div className="empty-icon">{tab === "facturas" ? "🧾" : "📋"}</div>
+          <div className="empty-icon">{tab === "facturas" ? "📋" : "📋"}</div>
           <h3>No hay {tab} todavía</h3>
         </div>
       ) : (
@@ -832,11 +906,13 @@ function Historial ({ docs, company }) {
                 <button className="btn btn-sm btn-outline" onClick={() => setViewDoc(d)}>
                   👁 Ver documento
                 </button>
+                <button className="btn btn-sm btn-outline" onClick={() => onEdit(d)}>
+                  ✏️ Editar
+                </button>
                 <button
                   className="btn btn-sm btn-outline btn-download"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // Render off-screen, download, then clean up
                     setViewDoc(d);
                     setTimeout(() => {
                       const prefijo = d.tipo === "factura" ? "FACTURA" : "PRESUPUESTO";
@@ -856,8 +932,9 @@ function Historial ({ docs, company }) {
 }
 
 // ─── Config ─────────────────────────────────────────────
-function Config ({ company, setCompany }) {
+function Config ({ company, setCompany, onImportData }) {
   const upd = (field, val) => setCompany((c) => ({ ...c, [field]: val }));
+  const [backupMsg, setBackupMsg] = useState(null);
   const fields = [
     { field: "nombre", label: "Nombre completo", placeholder: "JHONY SANDRO CLAROS SALINAS" },
     { field: "dni", label: "DNI", placeholder: "49612445L" },
@@ -899,6 +976,47 @@ function Config ({ company, setCompany }) {
             </p>
           </div>
         </div>
+      </div>
+
+      <h3 style={{ marginTop: "2rem", marginBottom: "0.5rem" }}>Copia de seguridad</h3>
+      <p className="page-subtitle" style={{ marginBottom: "1rem" }}>Exporta tus datos para no perderlos si se estropea el ordenador</p>
+      <div className="form-section">
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <button
+            className="btn btn-primary"
+            onClick={async () => {
+              if (!window.electronAPI) { setBackupMsg({ ok: false, text: "Solo funciona en Electron" }); return; }
+              const res = await window.electronAPI.exportData();
+              if (res.success) setBackupMsg({ ok: true, text: `Copia guardada en: ${res.path}` });
+              else if (res.error !== "Cancelado") setBackupMsg({ ok: false, text: res.error });
+            }}
+          >
+            📤 Exportar datos
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={async () => {
+              if (!window.electronAPI) { setBackupMsg({ ok: false, text: "Solo funciona en Electron" }); return; }
+              const res = await window.electronAPI.importData();
+              if (res.success) {
+                onImportData(res.data);
+                setBackupMsg({ ok: true, text: "Datos importados correctamente. La app se ha actualizado." });
+              } else if (res.error !== "Cancelado") {
+                setBackupMsg({ ok: false, text: res.error });
+              }
+            }}
+          >
+            📥 Importar datos
+          </button>
+        </div>
+        {backupMsg && (
+          <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: backupMsg.ok ? "#16a34a" : "#dc2626" }}>
+            {backupMsg.text}
+          </p>
+        )}
+        <p style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: "0.5rem" }}>
+          Guarda la copia en un USB, Google Drive o envíatela por email. Si algún día pierdes el ordenador, importa el archivo y recuperas todo.
+        </p>
       </div>
     </div>
   );
@@ -1046,26 +1164,78 @@ export default function App () {
   const [docs, setDocs] = useState([]);
   const [company, setCompany] = useState(INITIAL_COMPANY);
   const [catalogo, setCatalogo] = useState(CATALOGO_INICIAL);
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load saved data on startup
+  useEffect(() => {
+    async function loadData () {
+      if (window.electronAPI) {
+        const savedDocs = await window.electronAPI.storeGet("docs");
+        const savedCompany = await window.electronAPI.storeGet("company");
+        const savedCatalogo = await window.electronAPI.storeGet("catalogo");
+        if (savedDocs) setDocs(savedDocs);
+        if (savedCompany) setCompany(savedCompany);
+        if (savedCatalogo) setCatalogo(savedCatalogo);
+      }
+      setLoaded(true);
+    }
+    loadData();
+  }, []);
+
+  // Auto-save whenever data changes
+  useEffect(() => {
+    if (!loaded || !window.electronAPI) return;
+    window.electronAPI.storeSet("docs", docs);
+  }, [docs, loaded]);
+
+  useEffect(() => {
+    if (!loaded || !window.electronAPI) return;
+    window.electronAPI.storeSet("company", company);
+  }, [company, loaded]);
+
+  useEffect(() => {
+    if (!loaded || !window.electronAPI) return;
+    window.electronAPI.storeSet("catalogo", catalogo);
+  }, [catalogo, loaded]);
 
   const addDoc = (doc) => {
-    setDocs((prev) => [...prev, doc]);
+    if (doc._editId) {
+      // Updating existing document
+      const editId = doc._editId;
+      delete doc._editId;
+      setDocs((prev) => prev.map((d) => (d.id === editId ? { ...doc, id: editId } : d)));
+    } else {
+      // New document
+      setDocs((prev) => [...prev, { ...doc, id: Date.now() }]);
+    }
+    setEditingDoc(null);
     setView("dashboard");
   };
 
+  const handleEdit = (doc) => {
+    setEditingDoc(doc);
+    setView(doc.tipo === "factura" ? "nueva-factura" : "nuevo-presupuesto");
+  };
+
   const content = {
-    dashboard: <Dashboard docs={docs} company={company} />,
-    "nueva-factura": <DocForm key="factura" tipo="factura" onSave={addDoc} company={company} catalogo={catalogo} />,
-    "nuevo-presupuesto": <DocForm key="presupuesto" tipo="presupuesto" onSave={addDoc} company={company} catalogo={catalogo} />,
+    dashboard: <Dashboard docs={docs} company={company} onEdit={handleEdit} />,
+    "nueva-factura": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "factura"} tipo="factura" onSave={addDoc} company={company} catalogo={catalogo} editingDoc={editingDoc && editingDoc.tipo === "factura" ? editingDoc : null} />,
+    "nuevo-presupuesto": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "presupuesto"} tipo="presupuesto" onSave={addDoc} company={company} catalogo={catalogo} editingDoc={editingDoc && editingDoc.tipo === "presupuesto" ? editingDoc : null} />,
     catalogo: <Catalogo catalogo={catalogo} setCatalogo={setCatalogo} />,
-    historial: <Historial docs={docs} company={company} />,
-    config: <Config company={company} setCompany={setCompany} />,
+    historial: <Historial docs={docs} company={company} onEdit={handleEdit} />,
+    config: <Config company={company} setCompany={setCompany} onImportData={(data) => {
+      if (data.docs) setDocs(data.docs);
+      if (data.company) setCompany(data.company);
+      if (data.catalogo) setCatalogo(data.catalogo);
+    }} />,
   };
 
   return (
     <div className="app-layout">
       <Sidebar
         view={view}
-        setView={setView}
+        setView={(v) => { setEditingDoc(null); setView(v); }}
         counts={{
           facturas: docs.filter((d) => d.tipo === "factura").length,
           presupuestos: docs.filter((d) => d.tipo === "presupuesto").length,
