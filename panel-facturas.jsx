@@ -63,6 +63,7 @@ const newItem = () => ({
 const newSection = () => ({
   id: uid(),
   titulo: "",
+  mostrarTotal: false,
   items: [newItem()],
 });
 
@@ -75,6 +76,7 @@ const emptyDoc = (tipo, notaPorDefecto) => ({
   secciones: [newSection()],
   iva: tipo === "factura" ? 21 : 10,
   notas: notaPorDefecto || "",
+  totalManual: null,
 });
 
 const fmt = (n) =>
@@ -243,6 +245,14 @@ function SectionEditor ({ seccion, secIdx, onUpdate, onRemove, catalogo }) {
           value={seccion.titulo}
           onChange={(e) => updateField("titulo", e.target.value)}
         />
+        <label className="toggle-label" title="Mostrar P.U, Cantidad e Importe en la fila de la sección">
+          <input
+            type="checkbox"
+            checked={!!seccion.mostrarTotal}
+            onChange={(e) => updateField("mostrarTotal", e.target.checked)}
+          />
+          <span className="toggle-text">Mostrar importes</span>
+        </label>
         <button className="btn-remove-section" onClick={onRemove} title="Eliminar sección">×</button>
       </div>
       <div className="section-items">
@@ -308,9 +318,11 @@ function DocPreview ({ doc, company, pdfRef }) {
     return { ...sec, items, total };
   });
 
-  const subtotal = sectionData.reduce((s, sec) => s + sec.total, 0);
-  const ivaAmt = subtotal * (doc.iva / 100);
-  const total = subtotal + ivaAmt;
+  const autoSubtotal = sectionData.reduce((s, sec) => s + sec.total, 0);
+  const hasManualTotal = doc.totalManual != null && doc.totalManual !== "";
+  const total = hasManualTotal ? (parseFloat(doc.totalManual) || 0) : autoSubtotal * (1 + doc.iva / 100);
+  const subtotal = hasManualTotal ? total / (1 + doc.iva / 100) : autoSubtotal;
+  const ivaAmt = total - subtotal;
 
   return (
     <div className="doc-preview" ref={pdfRef}>
@@ -358,7 +370,8 @@ function DocPreview ({ doc, company, pdfRef }) {
             cant: { textAlign: "center" },
             imp: { textAlign: "right", paddingRight: "0.75rem" },
             bold: { fontWeight: 700 },
-            secBg: { backgroundColor: "#f9f9f9" },
+            extraBold: { fontWeight: 900 },
+            secBg: { backgroundColor: "#d1d9e1" },
             subBorder: { borderTop: "2px solid #999", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem" },
             ivaBorder: { borderLeft: "none", borderRight: "none" },
             totalBorder: { borderTop: "2px solid #333", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem", fontWeight: 700, fontSize: "0.85rem" },
@@ -378,12 +391,12 @@ function DocPreview ({ doc, company, pdfRef }) {
               {sectionData.map((sec, sIdx) => (
                 <>
                   <tr key={`sec-${sec.id}`}>
-                    <td style={c(S.num, S.secBg)}>{toRoman(sIdx)}</td>
-                    <td style={c(S.ud, S.secBg)}>ud</td>
-                    <td style={c(S.desc, S.secBg, S.bold)}>{sec.titulo}</td>
-                    <td style={c(S.pu, S.secBg)}>{fmt(sec.total)}</td>
-                    <td style={c(S.cant, S.secBg)}>1</td>
-                    <td style={c(S.imp, S.secBg)}>{fmt(sec.total)}</td>
+                    <td style={c(S.num, S.secBg, S.extraBold)}>{toRoman(sIdx)}</td>
+                    <td style={c(S.ud, S.secBg, S.extraBold)}></td>
+                    <td style={c(S.desc, S.secBg, S.extraBold)}>{sec.titulo}</td>
+                    <td style={c(S.pu, S.secBg, S.extraBold)}>{sec.mostrarTotal ? fmt(sec.total) : ""}</td>
+                    <td style={c(S.cant, S.secBg, S.extraBold)}>{sec.mostrarTotal ? 1 : ""}</td>
+                    <td style={c(S.imp, S.secBg, S.extraBold)}>{sec.mostrarTotal ? fmt(sec.total) : ""}</td>
                   </tr>
                   {sec.items.map((it) => (
                     <tr key={`item-${it.id}`}>
@@ -428,7 +441,9 @@ function DocPreview ({ doc, company, pdfRef }) {
       </table>
 
       <div className="doc-footer">
-        <p className="doc-nota"><strong>Nota:</strong> {doc.notas}</p>
+        {company.notaPorDefecto && (
+          <p className="doc-nota"><strong>Nota:</strong> {company.notaPorDefecto}</p>
+        )}
         <p className="doc-banco">{company.cuentaBanco}</p>
         <p className="doc-firma-label">Firma</p>
         <div className="doc-firmas">
@@ -475,11 +490,13 @@ function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
   const removeSection = (idx) => upd("secciones", doc.secciones.filter((_, i) => i !== idx));
   const addSection = () => upd("secciones", [...doc.secciones, newSection()]);
 
-  const subtotal = doc.secciones.reduce(
+  const autoSubtotal = doc.secciones.reduce(
     (s, sec) => s + sec.items.reduce((si, it) => si + (it.tieneImporte ? it.pu * it.cantidad : 0), 0), 0
   );
-  const ivaAmt = subtotal * (doc.iva / 100);
-  const total = subtotal + ivaAmt;
+  const hasManualTotal = doc.totalManual != null && doc.totalManual !== "";
+  const total = hasManualTotal ? (parseFloat(doc.totalManual) || 0) : autoSubtotal * (1 + doc.iva / 100);
+  const subtotal = hasManualTotal ? total / (1 + doc.iva / 100) : autoSubtotal;
+  const ivaAmt = total - subtotal;
 
   const titulo = tipo === "factura" ? "Factura" : "Presupuesto";
   const prefijo = tipo === "factura" ? "FACTURA" : "PRESUPUESTO";
@@ -585,15 +602,33 @@ function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
       </div>
 
       <div className="form-section">
-        <div className="totals-row">
-          <div style={{ flex: 1, marginRight: "2rem" }}>
-            <label className="form-label">Nota de condiciones de pago (puedes editarla para este trabajo)</label>
-            <textarea className="form-textarea" rows={4} placeholder="Escribe las condiciones de pago para este trabajo..." value={doc.notas} onChange={(e) => upd("notas", e.target.value)} />
-          </div>
+        <div className="totals-row" style={{ justifyContent: "flex-end" }}>
           <div className="totals-box">
             <div className="total-line"><span>Subtotal</span><span>{fmt(subtotal)} €</span></div>
             <div className="total-line"><span>IVA ({doc.iva}%)</span><span>{fmt(ivaAmt)} €</span></div>
-            <div className="total-final"><span>TOTAL</span><span>{fmt(total)} €</span></div>
+            <label className="toggle-label" style={{ margin: "0.5rem 0", justifyContent: "flex-end" }}>
+              <input
+                type="checkbox"
+                checked={hasManualTotal}
+                onChange={(e) => upd("totalManual", e.target.checked ? total.toFixed(2) : null)}
+              />
+              <span className="toggle-text">Total manual</span>
+            </label>
+            {hasManualTotal ? (
+              <div className="total-final" style={{ alignItems: "center" }}>
+                <span>TOTAL</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={doc.totalManual}
+                  onChange={(e) => upd("totalManual", e.target.value)}
+                  style={{ width: "9rem", textAlign: "right", fontWeight: 700, padding: "0.25rem 0.5rem" }}
+                />
+              </div>
+            ) : (
+              <div className="total-final"><span>TOTAL</span><span>{fmt(total)} €</span></div>
+            )}
           </div>
         </div>
       </div>
@@ -957,6 +992,23 @@ function Config ({ company, setCompany, onImportData }) {
               <input className="form-input" placeholder={f.placeholder} value={company[f.field]} onChange={(e) => upd(f.field, e.target.value)} />
             </div>
           ))}
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: "2rem", marginBottom: "0.5rem" }}>Nota</h3>
+      <p className="page-subtitle" style={{ marginBottom: "1rem" }}>Este texto aparecerá al final de todas las facturas y presupuestos (condiciones de pago, aviso legal, etc.)</p>
+      <div className="form-section">
+        <div className="config-form">
+          <div>
+            <label className="form-label">Nota por defecto</label>
+            <textarea
+              className="form-textarea"
+              rows={4}
+              placeholder="Ej: El pago deberá realizarse en un plazo máximo de 15 días desde la emisión de la factura mediante transferencia bancaria..."
+              value={company.notaPorDefecto}
+              onChange={(e) => upd("notaPorDefecto", e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
