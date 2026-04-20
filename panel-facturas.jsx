@@ -64,6 +64,7 @@ const newSection = () => ({
   id: uid(),
   titulo: "",
   mostrarTotal: false,
+  totalSeccion: null,
   items: [newItem()],
 });
 
@@ -119,8 +120,10 @@ function Sidebar ({ view, setView, counts }) {
     { id: "dashboard", label: "Panel", icon: "🐈" },
     { id: "nueva-factura", label: "Nueva Factura", icon: "📋" },
     { id: "nuevo-presupuesto", label: "Nuevo Presupuesto", icon: "📋" },
+    { id: "clientes", label: "Clientes", icon: "👥" },
     { id: "catalogo", label: "Catálogo Precios", icon: "📖" },
     { id: "historial", label: "Historial", icon: "🙈" },
+    { id: "resumen", label: "Resumen Financiero", icon: "📊" },
     { id: "config", label: "Configuración", icon: "🍞 " },
   ];
   return (
@@ -245,14 +248,6 @@ function SectionEditor ({ seccion, secIdx, onUpdate, onRemove, catalogo }) {
           value={seccion.titulo}
           onChange={(e) => updateField("titulo", e.target.value)}
         />
-        <label className="toggle-label" title="Mostrar P.U, Cantidad e Importe en la fila de la sección">
-          <input
-            type="checkbox"
-            checked={!!seccion.mostrarTotal}
-            onChange={(e) => updateField("mostrarTotal", e.target.checked)}
-          />
-          <span className="toggle-text">Mostrar importes</span>
-        </label>
         <button className="btn-remove-section" onClick={onRemove} title="Eliminar sección">×</button>
       </div>
       <div className="section-items">
@@ -300,6 +295,35 @@ function SectionEditor ({ seccion, secIdx, onUpdate, onRemove, catalogo }) {
         ))}
       </div>
       <button onClick={addItem} className="btn-add-line">+ Añadir concepto</button>
+
+      {/* Section total */}
+      <div className="section-total-bar">
+        <label className="toggle-label">
+          <input
+            type="checkbox"
+            checked={!!seccion.mostrarTotal}
+            onChange={(e) => updateField("mostrarTotal", e.target.checked)}
+          />
+          <span className="toggle-text">Mostrar total de sección</span>
+        </label>
+        {seccion.mostrarTotal && (
+          <div className="section-total-input-group">
+            <label className="form-label">Total sección (€)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="form-input small-input"
+              placeholder={fmt(seccion.items.reduce((s, it) => s + (it.tieneImporte ? it.pu * it.cantidad : 0), 0))}
+              value={seccion.totalSeccion ?? ""}
+              onChange={(e) => updateField("totalSeccion", e.target.value === "" ? null : parseFloat(e.target.value) || 0)}
+            />
+          </div>
+        )}
+        <span className="section-total-value">
+          Auto: {fmt(seccion.items.reduce((s, it) => s + (it.tieneImporte ? it.pu * it.cantidad : 0), 0))} €
+        </span>
+      </div>
     </div>
   );
 }
@@ -310,7 +334,8 @@ function DocPreview ({ doc, company, pdfRef }) {
 
   let globalItemNum = 0;
   const sectionData = doc.secciones.map((sec) => {
-    const total = sec.items.reduce((s, it) => s + (it.tieneImporte ? it.pu * it.cantidad : 0), 0);
+    const autoTotal = sec.items.reduce((s, it) => s + (it.tieneImporte ? it.pu * it.cantidad : 0), 0);
+    const total = (sec.mostrarTotal && sec.totalSeccion != null) ? sec.totalSeccion : autoTotal;
     const items = sec.items.map((it) => {
       globalItemNum++;
       return { ...it, globalNum: globalItemNum };
@@ -372,6 +397,7 @@ function DocPreview ({ doc, company, pdfRef }) {
             bold: { fontWeight: 700 },
             extraBold: { fontWeight: 900 },
             secBg: { backgroundColor: "#d1d9e1" },
+            secTotalBg: { backgroundColor: "#e8ecf0", borderTop: "1.5px solid #999" },
             subBorder: { borderTop: "2px solid #999", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem" },
             ivaBorder: { borderLeft: "none", borderRight: "none" },
             totalBorder: { borderTop: "2px solid #333", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem", fontWeight: 700, fontSize: "0.85rem" },
@@ -393,10 +419,10 @@ function DocPreview ({ doc, company, pdfRef }) {
                   <tr key={`sec-${sec.id}`}>
                     <td style={c(S.num, S.secBg, S.extraBold)}>{toRoman(sIdx)}</td>
                     <td style={c(S.ud, S.secBg, S.extraBold)}></td>
-                    <td style={c(S.desc, S.secBg, S.extraBold)}>{sec.titulo}</td>
-                    <td style={c(S.pu, S.secBg, S.extraBold)}>{sec.mostrarTotal ? fmt(sec.total) : ""}</td>
-                    <td style={c(S.cant, S.secBg, S.extraBold)}>{sec.mostrarTotal ? 1 : ""}</td>
-                    <td style={c(S.imp, S.secBg, S.extraBold)}>{sec.mostrarTotal ? fmt(sec.total) : ""}</td>
+                    <td style={c(S.desc, S.secBg, S.extraBold)}>{(sec.titulo || "").toUpperCase()}</td>
+                    <td style={c(S.pu, S.secBg, S.extraBold)}></td>
+                    <td style={c(S.cant, S.secBg, S.extraBold)}></td>
+                    <td style={c(S.imp, S.secBg, S.extraBold)}></td>
                   </tr>
                   {sec.items.map((it) => (
                     <tr key={`item-${it.id}`}>
@@ -408,6 +434,16 @@ function DocPreview ({ doc, company, pdfRef }) {
                       <td style={c(S.imp, S.bold)}>{it.tieneImporte ? fmt(it.pu * it.cantidad) : ""}</td>
                     </tr>
                   ))}
+                  {sec.mostrarTotal && (
+                    <tr key={`sectotal-${sec.id}`}>
+                      <td style={c(S.num, S.secTotalBg)}></td>
+                      <td style={c(S.ud, S.secTotalBg)}></td>
+                      <td style={c(S.desc, S.secTotalBg, S.bold)}>TOTAL {(sec.titulo || `SECCIÓN ${toRoman(sIdx)}`).toUpperCase()}</td>
+                      <td style={c(S.pu, S.secTotalBg)}></td>
+                      <td style={c(S.cant, S.secTotalBg)}></td>
+                      <td style={c(S.imp, S.secTotalBg, S.extraBold)}>{fmt(sec.total)}</td>
+                    </tr>
+                  )}
                 </>
               ))}
 
@@ -464,7 +500,7 @@ function DocPreview ({ doc, company, pdfRef }) {
 }
 
 // ─── Document Form ──────────────────────────────────────
-function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
+function DocForm ({ tipo, onSave, company, catalogo, clientes, editingDoc }) {
   const isEditing = !!editingDoc;
   const [doc, setDoc] = useState(() => {
     if (editingDoc) {
@@ -491,7 +527,10 @@ function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
   const addSection = () => upd("secciones", [...doc.secciones, newSection()]);
 
   const autoSubtotal = doc.secciones.reduce(
-    (s, sec) => s + sec.items.reduce((si, it) => si + (it.tieneImporte ? it.pu * it.cantidad : 0), 0), 0
+    (s, sec) => {
+      const itemsTotal = sec.items.reduce((si, it) => si + (it.tieneImporte ? it.pu * it.cantidad : 0), 0);
+      return s + ((sec.mostrarTotal && sec.totalSeccion != null) ? sec.totalSeccion : itemsTotal);
+    }, 0
   );
   const hasManualTotal = doc.totalManual != null && doc.totalManual !== "";
   const total = hasManualTotal ? (parseFloat(doc.totalManual) || 0) : autoSubtotal * (1 + doc.iva / 100);
@@ -566,6 +605,28 @@ function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
 
       <div className="form-section">
         <h3>Datos del cliente</h3>
+        {clientes.length > 0 && (
+          <div style={{ marginBottom: "1rem" }}>
+            <label className="form-label">Seleccionar cliente guardado</label>
+            <select
+              className="form-select"
+              value=""
+              onChange={(e) => {
+                const sel = clientes.find((c) => c.id === parseInt(e.target.value));
+                if (sel) {
+                  updCli("nombre", sel.nombre);
+                  updCli("nie", sel.nie || "");
+                  updCli("direccion", sel.direccion || "");
+                }
+              }}
+            >
+              <option value="">— Seleccionar Cliente —</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre} {c.nie ? `(${c.nie})` : ""}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="form-grid-2">
           <div>
             <label className="form-label">CLIENTE (Nombre / Empresa)</label>
@@ -696,7 +757,7 @@ function DocForm ({ tipo, onSave, company, catalogo, editingDoc }) {
 }
 
 // ─── Dashboard ──────────────────────────────────────────
-function Dashboard ({ docs, company, onEdit }) {
+function Dashboard ({ docs, company, onEdit, onDelete }) {
   const facturas = docs.filter((d) => d.tipo === "factura");
   const presupuestos = docs.filter((d) => d.tipo === "presupuesto");
   const totalFacturado = facturas.reduce((s, d) => s + (d.total || 0), 0);
@@ -758,6 +819,9 @@ function Dashboard ({ docs, company, onEdit }) {
                   <button className="btn-table-action" onClick={() => onEdit(d)} title="Editar documento" style={{ marginLeft: "0.5rem" }}>
                     ✏️ Editar
                   </button>
+                  <button className="btn-table-action btn-table-delete" onClick={() => { if (window.confirm(`¿Eliminar ${d.tipo} ${d.numero || ""}?`)) onDelete(d); }} title="Eliminar documento" style={{ marginLeft: "0.5rem" }}>
+                    🗑
+                  </button>
                 </td>
               </tr>
             ))}
@@ -800,7 +864,8 @@ function Dashboard ({ docs, company, onEdit }) {
 }
 
 // ─── Historial ──────────────────────────────────────────
-function Historial ({ docs, company, onEdit }) {
+function Historial ({ docs, company, onEdit, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [viewDoc, setViewDoc] = useState(null);
   const [tab, setTab] = useState("facturas");
   const [busqueda, setBusqueda] = useState("");
@@ -957,6 +1022,361 @@ function Historial ({ docs, company, onEdit }) {
                 >
                   📥 Descargar PDF
                 </button>
+                {confirmDelete === d.id ? (
+                  <>
+                    <span style={{ fontSize: "0.75rem", color: "#dc2626", fontWeight: 600 }}>¿Seguro?</span>
+                    <button className="btn btn-sm btn-danger" onClick={() => { onDelete(d); setConfirmDelete(null); }}>
+                      Sí, eliminar
+                    </button>
+                    <button className="btn btn-sm btn-outline" onClick={() => setConfirmDelete(null)}>
+                      Cancelar
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn btn-sm btn-outline btn-delete" onClick={() => setConfirmDelete(d.id)}>
+                    🗑 Eliminar
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Resumen ────────────────────────────────────────────
+const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+function Resumen ({ docs }) {
+  const facturas = docs.filter((d) => d.tipo === "factura");
+  const presupuestos = docs.filter((d) => d.tipo === "presupuesto");
+
+  // Get available years
+  const allYears = [...new Set(docs.map((d) => d.fecha?.split("-")[0]).filter(Boolean))].sort().reverse();
+  const [selectedYear, setSelectedYear] = useState(allYears[0] || new Date().getFullYear().toString());
+  const [vista, setVista] = useState("mensual");
+
+  // Monthly data for selected year
+  const monthlyData = MESES.map((mes, idx) => {
+    const monthStr = String(idx + 1).padStart(2, "0");
+    const prefix = `${selectedYear}-${monthStr}`;
+    const facMes = facturas.filter((d) => d.fecha?.startsWith(prefix));
+    const preMes = presupuestos.filter((d) => d.fecha?.startsWith(prefix));
+    return {
+      mes,
+      numFacturas: facMes.length,
+      totalFacturas: facMes.reduce((s, d) => s + (d.total || 0), 0),
+      numPresupuestos: preMes.length,
+      totalPresupuestos: preMes.reduce((s, d) => s + (d.total || 0), 0),
+    };
+  });
+
+  const totalAnualFacturas = monthlyData.reduce((s, m) => s + m.totalFacturas, 0);
+  const totalAnualPresupuestos = monthlyData.reduce((s, m) => s + m.totalPresupuestos, 0);
+  const numAnualFacturas = monthlyData.reduce((s, m) => s + m.numFacturas, 0);
+  const numAnualPresupuestos = monthlyData.reduce((s, m) => s + m.numPresupuestos, 0);
+  const maxMensual = Math.max(...monthlyData.map((m) => m.totalFacturas + m.totalPresupuestos), 1);
+
+  // Annual summary across all years
+  const annualData = allYears.map((year) => {
+    const facYear = facturas.filter((d) => d.fecha?.startsWith(year));
+    const preYear = presupuestos.filter((d) => d.fecha?.startsWith(year));
+    return {
+      year,
+      numFacturas: facYear.length,
+      totalFacturas: facYear.reduce((s, d) => s + (d.total || 0), 0),
+      numPresupuestos: preYear.length,
+      totalPresupuestos: preYear.reduce((s, d) => s + (d.total || 0), 0),
+    };
+  });
+
+  return (
+    <div>
+      <div className="form-header">
+        <div>
+          <h2 className="page-title">Resumen Financiero</h2>
+          <p className="page-subtitle">Control de facturación para impuestos y contabilidad</p>
+        </div>
+      </div>
+
+      {/* Stats cards */}
+      <div className="stats-grid" style={{ marginBottom: "1.5rem" }}>
+        <div className="stat-card blue">
+          <div className="stat-icon">🧾</div>
+          <div className="stat-value">{numAnualFacturas}</div>
+          <div className="stat-label">Facturas {selectedYear}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-icon">💰</div>
+          <div className="stat-value">{fmt(totalAnualFacturas)} €</div>
+          <div className="stat-label">Facturado {selectedYear}</div>
+        </div>
+        <div className="stat-card amber">
+          <div className="stat-icon">📋</div>
+          <div className="stat-value">{numAnualPresupuestos}</div>
+          <div className="stat-label">Presupuestos {selectedYear}</div>
+        </div>
+        <div className="stat-card purple">
+          <div className="stat-icon">📊</div>
+          <div className="stat-value">{fmt(totalAnualPresupuestos)} €</div>
+          <div className="stat-label">Presupuestado {selectedYear}</div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="resumen-controls">
+        <div className="tabs-bar">
+          <button className={`tab-btn ${vista === "mensual" ? "active" : ""}`} onClick={() => setVista("mensual")}>
+            📅 Mensual
+          </button>
+          <button className={`tab-btn ${vista === "anual" ? "active" : ""}`} onClick={() => setVista("anual")}>
+            📆 Anual
+          </button>
+        </div>
+        {vista === "mensual" && (
+          <select className="form-select" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ width: "auto" }}>
+            {allYears.length === 0 && <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>}
+            {allYears.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        )}
+      </div>
+
+      {vista === "mensual" ? (
+        <div className="resumen-table-container">
+          <table className="resumen-table">
+            <thead>
+              <tr>
+                <th>Mes</th>
+                <th className="text-right">Facturas</th>
+                <th className="text-right">Total Facturas</th>
+                <th className="text-right">Presupuestos</th>
+                <th className="text-right">Total Presup.</th>
+                <th className="text-right">Total Mes</th>
+                <th style={{ width: "20%" }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyData.map((m, idx) => {
+                const totalMes = m.totalFacturas + m.totalPresupuestos;
+                const pct = (totalMes / maxMensual) * 100;
+                const hasData = m.numFacturas > 0 || m.numPresupuestos > 0;
+                return (
+                  <tr key={idx} className={hasData ? "" : "resumen-row-empty"}>
+                    <td className="font-medium">{m.mes}</td>
+                    <td className="text-right">{m.numFacturas || "—"}</td>
+                    <td className="text-right">{m.numFacturas ? fmt(m.totalFacturas) + " €" : "—"}</td>
+                    <td className="text-right">{m.numPresupuestos || "—"}</td>
+                    <td className="text-right">{m.numPresupuestos ? fmt(m.totalPresupuestos) + " €" : "—"}</td>
+                    <td className="text-right font-semibold">{hasData ? fmt(totalMes) + " €" : "—"}</td>
+                    <td>
+                      <div className="resumen-bar-bg">
+                        <div className="resumen-bar-fill" style={{ width: `${pct}%` }}></div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="resumen-total-row">
+                <td className="font-semibold">TOTAL {selectedYear}</td>
+                <td className="text-right font-semibold">{numAnualFacturas}</td>
+                <td className="text-right font-semibold">{fmt(totalAnualFacturas)} €</td>
+                <td className="text-right font-semibold">{numAnualPresupuestos}</td>
+                <td className="text-right font-semibold">{fmt(totalAnualPresupuestos)} €</td>
+                <td className="text-right font-semibold">{fmt(totalAnualFacturas + totalAnualPresupuestos)} €</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* IVA summary */}
+          <div className="resumen-iva-box">
+            <h3>Resumen IVA — {selectedYear}</h3>
+            <div className="resumen-iva-grid">
+              <div>
+                <span className="resumen-iva-label">Base imponible (facturas)</span>
+                <span className="resumen-iva-value">{fmt(facturas.filter((d) => d.fecha?.startsWith(selectedYear)).reduce((s, d) => s + (d.subtotal || 0), 0))} €</span>
+              </div>
+              <div>
+                <span className="resumen-iva-label">IVA repercutido (facturas)</span>
+                <span className="resumen-iva-value">{fmt(facturas.filter((d) => d.fecha?.startsWith(selectedYear)).reduce((s, d) => s + (d.ivaAmt || 0), 0))} €</span>
+              </div>
+              <div>
+                <span className="resumen-iva-label">Total facturado</span>
+                <span className="resumen-iva-value font-semibold">{fmt(totalAnualFacturas)} €</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="resumen-table-container">
+          {annualData.length === 0 ? (
+            <div className="empty-state" style={{ marginTop: "1rem" }}>
+              <div className="empty-icon">📊</div>
+              <h3>Sin datos todavía</h3>
+            </div>
+          ) : (
+            <table className="resumen-table">
+              <thead>
+                <tr>
+                  <th>Año</th>
+                  <th className="text-right">Facturas</th>
+                  <th className="text-right">Total Facturas</th>
+                  <th className="text-right">Presupuestos</th>
+                  <th className="text-right">Total Presup.</th>
+                  <th className="text-right">Total Año</th>
+                </tr>
+              </thead>
+              <tbody>
+                {annualData.map((a) => (
+                  <tr key={a.year}>
+                    <td className="font-semibold">{a.year}</td>
+                    <td className="text-right">{a.numFacturas}</td>
+                    <td className="text-right">{fmt(a.totalFacturas)} €</td>
+                    <td className="text-right">{a.numPresupuestos}</td>
+                    <td className="text-right">{fmt(a.totalPresupuestos)} €</td>
+                    <td className="text-right font-semibold">{fmt(a.totalFacturas + a.totalPresupuestos)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Clientes ───────────────────────────────────────────
+function Clientes ({ clientes, setClientes }) {
+  const [filtro, setFiltro] = useState("");
+  const [editando, setEditando] = useState(null);
+  const [nuevo, setNuevo] = useState(false);
+  const [form, setForm] = useState({ nombre: "", nie: "", direccion: "", telefono: "", email: "" });
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  const filtered = clientes.filter((c) => {
+    if (!filtro.trim()) return true;
+    const q = filtro.toLowerCase();
+    return c.nombre.toLowerCase().includes(q) ||
+      (c.nie || "").toLowerCase().includes(q) ||
+      (c.direccion || "").toLowerCase().includes(q);
+  });
+
+  const handleSave = () => {
+    if (editando !== null) {
+      setClientes((prev) => prev.map((c) => (c.id === editando ? { ...form, id: editando } : c)));
+      setEditando(null);
+    } else {
+      setClientes((prev) => [...prev, { ...form, id: Date.now() }]);
+    }
+    setForm({ nombre: "", nie: "", direccion: "", telefono: "", email: "" });
+    setNuevo(false);
+  };
+
+  const handleEdit = (cliente) => {
+    setForm({ nombre: cliente.nombre, nie: cliente.nie || "", direccion: cliente.direccion || "", telefono: cliente.telefono || "", email: cliente.email || "" });
+    setEditando(cliente.id);
+    setNuevo(true);
+  };
+
+  const handleDelete = (id) => {
+    setClientes((prev) => prev.filter((c) => c.id !== id));
+    setConfirmDelete(null);
+  };
+
+  const handleCancel = () => {
+    setForm({ nombre: "", nie: "", direccion: "", telefono: "", email: "" });
+    setEditando(null);
+    setNuevo(false);
+  };
+
+  return (
+    <div>
+      <div className="form-header">
+        <div>
+          <h2 className="page-title">Agenda de Clientes</h2>
+          <p className="page-subtitle">{clientes.length} cliente(s) guardado(s)</p>
+        </div>
+        {!nuevo && (
+          <button className="btn btn-primary" onClick={() => setNuevo(true)}>+ Nuevo cliente</button>
+        )}
+      </div>
+
+      {nuevo && (
+        <div className="form-section" style={{ marginBottom: "1.5rem" }}>
+          <h3>{editando ? "Editar cliente" : "Nuevo cliente"}</h3>
+          <div className="form-grid-2">
+            <div>
+              <label className="form-label">Nombre / Empresa</label>
+              <input className="form-input" placeholder="María García" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+            </div>
+            <div>
+              <label className="form-label">NIE / NIF / CIF</label>
+              <input className="form-input" placeholder="12345678A" value={form.nie} onChange={(e) => setForm({ ...form, nie: e.target.value })} />
+            </div>
+            <div className="col-span-2">
+              <label className="form-label">Dirección</label>
+              <input className="form-input" placeholder="Carrer Gavines, 1, 07181, Palmanova" value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} />
+            </div>
+            <div>
+              <label className="form-label">Teléfono</label>
+              <input className="form-input" placeholder="612345678" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+            </div>
+            <div>
+              <label className="form-label">Email</label>
+              <input className="form-input" type="email" placeholder="cliente@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+            <button className="btn btn-outline" onClick={handleCancel}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={!form.nombre}>
+              {editando ? "Guardar cambios" : "Añadir cliente"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <input
+        className="form-input"
+        placeholder="Buscar por nombre, NIE o dirección..."
+        value={filtro}
+        onChange={(e) => setFiltro(e.target.value)}
+        style={{ marginBottom: "1rem", maxWidth: "25rem" }}
+      />
+
+      {filtered.length === 0 ? (
+        <div className="empty-state" style={{ marginTop: "1rem" }}>
+          <div className="empty-icon">👥</div>
+          <h3>{filtro ? "No hay clientes que coincidan" : "Sin clientes todavía"}</h3>
+          <p>{filtro ? "Prueba con otra búsqueda" : "Añade tu primer cliente con el botón de arriba"}</p>
+        </div>
+      ) : (
+        <div className="clientes-list">
+          {filtered.map((c) => (
+            <div key={c.id} className="cliente-card">
+              <div className="cliente-info">
+                <div className="cliente-nombre">{c.nombre}</div>
+                <div className="cliente-detalles">
+                  {c.nie && <span>NIE: {c.nie}</span>}
+                  {c.direccion && <span>{c.direccion}</span>}
+                  {c.telefono && <span>Tel: {c.telefono}</span>}
+                  {c.email && <span>{c.email}</span>}
+                </div>
+              </div>
+              <div className="cliente-actions">
+                <button className="btn-table-action" onClick={() => handleEdit(c)}>✏️ Editar</button>
+                {confirmDelete === c.id ? (
+                  <>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id)}>Sí, eliminar</button>
+                    <button className="btn btn-sm btn-outline" onClick={() => setConfirmDelete(null)}>Cancelar</button>
+                  </>
+                ) : (
+                  <button className="btn-table-action btn-table-delete" onClick={() => setConfirmDelete(c.id)}>🗑 Eliminar</button>
+                )}
               </div>
             </div>
           ))}
@@ -1138,7 +1558,7 @@ function Catalogo ({ catalogo, setCatalogo }) {
           <div className="catalogo-form-grid">
             <div>
               <label className="form-label">Código</label>
-              <input className="form-input" placeholder="ALB-001" value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} />
+              <input className="form-input" placeholder="001" value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} />
             </div>
             <div>
               <label className="form-label">Categoría</label>
@@ -1216,6 +1636,7 @@ export default function App () {
   const [docs, setDocs] = useState([]);
   const [company, setCompany] = useState(INITIAL_COMPANY);
   const [catalogo, setCatalogo] = useState(CATALOGO_INICIAL);
+  const [clientes, setClientes] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -1226,9 +1647,11 @@ export default function App () {
         const savedDocs = await window.electronAPI.storeGet("docs");
         const savedCompany = await window.electronAPI.storeGet("company");
         const savedCatalogo = await window.electronAPI.storeGet("catalogo");
+        const savedClientes = await window.electronAPI.storeGet("clientes");
         if (savedDocs) setDocs(savedDocs);
         if (savedCompany) setCompany(savedCompany);
         if (savedCatalogo) setCatalogo(savedCatalogo);
+        if (savedClientes) setClientes(savedClientes);
       }
       setLoaded(true);
     }
@@ -1251,6 +1674,11 @@ export default function App () {
     window.electronAPI.storeSet("catalogo", catalogo);
   }, [catalogo, loaded]);
 
+  useEffect(() => {
+    if (!loaded || !window.electronAPI) return;
+    window.electronAPI.storeSet("clientes", clientes);
+  }, [clientes, loaded]);
+
   const addDoc = (doc) => {
     if (doc._editId) {
       // Updating existing document
@@ -1270,16 +1698,23 @@ export default function App () {
     setView(doc.tipo === "factura" ? "nueva-factura" : "nuevo-presupuesto");
   };
 
+  const handleDelete = (doc) => {
+    setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+  };
+
   const content = {
-    dashboard: <Dashboard docs={docs} company={company} onEdit={handleEdit} />,
-    "nueva-factura": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "factura"} tipo="factura" onSave={addDoc} company={company} catalogo={catalogo} editingDoc={editingDoc && editingDoc.tipo === "factura" ? editingDoc : null} />,
-    "nuevo-presupuesto": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "presupuesto"} tipo="presupuesto" onSave={addDoc} company={company} catalogo={catalogo} editingDoc={editingDoc && editingDoc.tipo === "presupuesto" ? editingDoc : null} />,
+    dashboard: <Dashboard docs={docs} company={company} onEdit={handleEdit} onDelete={handleDelete} />,
+    "nueva-factura": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "factura"} tipo="factura" onSave={addDoc} company={company} catalogo={catalogo} clientes={clientes} editingDoc={editingDoc && editingDoc.tipo === "factura" ? editingDoc : null} />,
+    "nuevo-presupuesto": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "presupuesto"} tipo="presupuesto" onSave={addDoc} company={company} catalogo={catalogo} clientes={clientes} editingDoc={editingDoc && editingDoc.tipo === "presupuesto" ? editingDoc : null} />,
+    clientes: <Clientes clientes={clientes} setClientes={setClientes} />,
     catalogo: <Catalogo catalogo={catalogo} setCatalogo={setCatalogo} />,
-    historial: <Historial docs={docs} company={company} onEdit={handleEdit} />,
+    historial: <Historial docs={docs} company={company} onEdit={handleEdit} onDelete={handleDelete} />,
+    resumen: <Resumen docs={docs} />,
     config: <Config company={company} setCompany={setCompany} onImportData={(data) => {
       if (data.docs) setDocs(data.docs);
       if (data.company) setCompany(data.company);
       if (data.catalogo) setCatalogo(data.catalogo);
+      if (data.clientes) setClientes(data.clientes);
     }} />,
   };
 
