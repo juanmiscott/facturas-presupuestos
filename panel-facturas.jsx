@@ -380,12 +380,12 @@ function DocPreview ({ doc, company, pdfRef }) {
       <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse", marginBottom: "2rem", fontSize: "0.8rem" }}>
         <thead>
           <tr>
-            <th style={{ width: "5%", backgroundColor: "#f0f0f0", border: "1px solid #999", padding: "0.6rem 0.5rem", fontWeight: 700, fontSize: "0.75rem", textAlign: "center" }}>Nº</th>
-            <th style={{ width: "5%", backgroundColor: "#f0f0f0", border: "1px solid #999", padding: "0.6rem 0.5rem", fontWeight: 700, fontSize: "0.75rem", textAlign: "center" }}>UD</th>
-            <th style={{ width: "35%", backgroundColor: "#f0f0f0", border: "1px solid #999", padding: "0.6rem 0.5rem", fontWeight: 700, fontSize: "0.75rem", textAlign: "center" }}>DESCRIPCIÓN</th>
-            <th style={{ width: "15%", backgroundColor: "#f0f0f0", border: "1px solid #999", padding: "0.6rem 0.5rem", fontWeight: 700, fontSize: "0.75rem", textAlign: "center" }}>P.U (€)</th>
-            <th style={{ width: "15%", backgroundColor: "#f0f0f0", border: "1px solid #999", padding: "0.6rem 0.5rem", fontWeight: 700, fontSize: "0.75rem", textAlign: "center" }}>CANTIDAD</th>
-            <th style={{ width: "25%", backgroundColor: "#f0f0f0", border: "1px solid #999", padding: "0.6rem 0.5rem", fontWeight: 700, fontSize: "0.75rem", textAlign: "center" }}>IMPORTE (€)</th>
+            <th style={{ width: "5%", backgroundColor: "#192335", color: "#EAEADF", border: "1px solid #192335", padding: "0.5rem 0.5rem", fontWeight: 600, fontSize: "0.68rem", textAlign: "center" }}>Nº</th>
+            <th style={{ width: "5%", backgroundColor: "#192335", color: "#EAEADF", border: "1px solid #192335", padding: "0.5rem 0.5rem", fontWeight: 600, fontSize: "0.68rem", textAlign: "center" }}>UD</th>
+            <th style={{ width: "35%", backgroundColor: "#192335", color: "#EAEADF", border: "1px solid #192335", padding: "0.5rem 0.5rem", fontWeight: 600, fontSize: "0.68rem", textAlign: "center" }}>DESCRIPCIÓN</th>
+            <th style={{ width: "15%", backgroundColor: "#192335", color: "#EAEADF", border: "1px solid #192335", padding: "0.5rem 0.5rem", fontWeight: 600, fontSize: "0.68rem", textAlign: "center" }}>P.U (€)</th>
+            <th style={{ width: "15%", backgroundColor: "#192335", color: "#EAEADF", border: "1px solid #192335", padding: "0.5rem 0.5rem", fontWeight: 600, fontSize: "0.68rem", textAlign: "center" }}>CANTIDAD</th>
+            <th style={{ width: "25%", backgroundColor: "#192335", color: "#EAEADF", border: "1px solid #192335", padding: "0.5rem 0.5rem", fontWeight: 600, fontSize: "0.68rem", textAlign: "center" }}>IMPORTE (€)</th>
           </tr>
         </thead>
         {(() => {
@@ -399,11 +399,11 @@ function DocPreview ({ doc, company, pdfRef }) {
             imp: { textAlign: "right", paddingRight: "0.75rem" },
             bold: { fontWeight: 700 },
             extraBold: { fontWeight: 900 },
-            secBg: { backgroundColor: "#d1d9e1" },
-            secTotalBg: { backgroundColor: "#e8ecf0", borderTop: "1.5px solid #999" },
-            subBorder: { borderTop: "2px solid #999", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem" },
+            secBg: { backgroundColor: "#2a3a52", color: "#EAEADF", fontSize: "0.68rem", fontWeight: 600 },
+            secTotalBg: { backgroundColor: "#EAEADF", borderTop: "1.5px solid #192335", fontSize: "0.68rem", fontWeight: 600 },
+            subBorder: { borderTop: "2px solid #192335", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem" },
             ivaBorder: { borderLeft: "none", borderRight: "none" },
-            totalBorder: { borderTop: "2px solid #333", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem", fontWeight: 700, fontSize: "0.85rem" },
+            totalBorder: { borderTop: "2px solid #192335", borderLeft: "none", borderRight: "none", paddingTop: "0.75rem", fontWeight: 700, fontSize: "0.85rem" },
           };
           const c = (...styles) => Object.assign({}, S.cell, ...styles);
 
@@ -420,12 +420,12 @@ function DocPreview ({ doc, company, pdfRef }) {
               {sectionData.map((sec, sIdx) => (
                 <>
                   <tr key={`sec-${sec.id}`}>
-                    <td style={c(S.num, S.secBg, S.extraBold)}>{toRoman(sIdx)}</td>
-                    <td style={c(S.ud, S.secBg, S.extraBold)}></td>
-                    <td style={c(S.desc, S.secBg, S.extraBold)}>{(sec.titulo || "").toUpperCase()}</td>
-                    <td style={c(S.pu, S.secBg, S.extraBold)}></td>
-                    <td style={c(S.cant, S.secBg, S.extraBold)}></td>
-                    <td style={c(S.imp, S.secBg, S.extraBold)}></td>
+                    <td style={c(S.num, S.secBg)}>{toRoman(sIdx)}</td>
+                    <td style={c(S.ud, S.secBg)}></td>
+                    <td style={c(S.desc, S.secBg)}>{(sec.titulo || "").toUpperCase()}</td>
+                    <td style={c(S.pu, S.secBg)}></td>
+                    <td style={c(S.cant, S.secBg)}></td>
+                    <td style={c(S.imp, S.secBg)}></td>
                   </tr>
                   {sec.items.map((it) => (
                     <tr key={`item-${it.id}`}>
@@ -441,10 +441,10 @@ function DocPreview ({ doc, company, pdfRef }) {
                     <tr key={`sectotal-${sec.id}`}>
                       <td style={c(S.num, S.secTotalBg)}></td>
                       <td style={c(S.ud, S.secTotalBg)}></td>
-                      <td style={c(S.desc, S.secTotalBg, S.bold)}>TOTAL {(sec.titulo || `SECCIÓN ${toRoman(sIdx)}`).toUpperCase()}</td>
+                      <td style={c(S.desc, S.secTotalBg)}>TOTAL {(sec.titulo || `SECCIÓN ${toRoman(sIdx)}`).toUpperCase()}</td>
                       <td style={c(S.pu, S.secTotalBg)}></td>
                       <td style={c(S.cant, S.secTotalBg)}></td>
-                      <td style={c(S.imp, S.secTotalBg, S.extraBold)}>{fmt(sec.total)}</td>
+                      <td style={c(S.imp, S.secTotalBg)}>{fmt(sec.total)}</td>
                     </tr>
                   )}
                 </>
