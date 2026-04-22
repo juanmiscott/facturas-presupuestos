@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
@@ -8,7 +8,7 @@ const isDev = !app.isPackaged;
 
 // ─── Persistent storage ─────────────────────────────────
 let store;
-async function initStore() {
+async function initStore () {
   const Store = (await import("electron-store")).default;
   store = new Store({
     name: "factufacil-data",
@@ -16,17 +16,19 @@ async function initStore() {
       docs: [],
       company: null,
       catalogo: null,
+      clientes: [],
+      gastos: [],
     },
   });
 }
 
-function createWindow() {
+function createWindow () {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: "FactuFácil",
+    title: "LISA",
     icon: path.join(__dirname, "icon.png"),
     webPreferences: {
       nodeIntegration: false,
@@ -70,6 +72,8 @@ ipcMain.handle("export-data", async () => {
       docs: store.get("docs") || [],
       company: store.get("company") || null,
       catalogo: store.get("catalogo") || null,
+      clientes: store.get("clientes") || [],
+      gastos: store.get("gastos") || [],
       exportedAt: new Date().toISOString(),
     };
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
@@ -94,6 +98,8 @@ ipcMain.handle("import-data", async () => {
     if (data.docs) store.set("docs", data.docs);
     if (data.company) store.set("company", data.company);
     if (data.catalogo) store.set("catalogo", data.catalogo);
+    if (data.clientes) store.set("clientes", data.clientes);
+    if (data.gastos) store.set("gastos", data.gastos);
     return { success: true, data };
   } catch (err) {
     return { success: false, error: "Archivo no válido: " + err.message };
@@ -145,6 +151,23 @@ ipcMain.handle("send-email", async (_event, data) => {
       errorMsg = "Error de autenticación. Verifica tu correo Gmail y contraseña de aplicación.";
     }
     return { success: false, error: errorMsg };
+  }
+});
+
+// ─── Open bundled PDF files ─────────────────────────────
+ipcMain.handle("open-pdf", async (_event, filename) => {
+  try {
+    // In production: dist/ folder; in dev: public/ folder
+    const pdfPath = isDev
+      ? path.join(__dirname, "..", "public", filename)
+      : path.join(__dirname, "..", "dist", filename);
+    if (!fs.existsSync(pdfPath)) {
+      return { success: false, error: "Archivo no encontrado: " + filename };
+    }
+    await shell.openPath(pdfPath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 

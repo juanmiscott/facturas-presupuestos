@@ -29,8 +29,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.factufacil.app",
-    "productName": "FactuFácil",
+    "appId": "com.lisa.app",
+    "productName": "LISA",
     "directories": {
       "output": "release"
     },
@@ -54,7 +54,7 @@
       "oneClick": true,
       "installerIcon": "electron/icon.png",
       "uninstallerIcon": "electron/icon.png",
-      "shortcutName": "FactuFácil"
+      "shortcutName": "LISA"
     }
   }
 }

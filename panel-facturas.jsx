@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import html2pdf from "html2pdf.js";
+import { LOGO_BASE64 } from "./src/logoBase64.js";
 
 // ─── Data defaults ──────────────────────────────────────
 const INITIAL_COMPANY = {
@@ -121,6 +122,7 @@ function Sidebar ({ view, setView, counts }) {
     { id: "nueva-factura", label: "Nueva Factura", icon: "📋" },
     { id: "nuevo-presupuesto", label: "Nuevo Presupuesto", icon: "📋" },
     { id: "clientes", label: "Clientes", icon: "👥" },
+    { id: "gastos", label: "Gastos Deducibles", icon: "🧾" },
     { id: "catalogo", label: "Catálogo Precios", icon: "📖" },
     { id: "historial", label: "Historial", icon: "🙈" },
     { id: "resumen", label: "Resumen Financiero", icon: "📊" },
@@ -304,7 +306,7 @@ function SectionEditor ({ seccion, secIdx, onUpdate, onRemove, catalogo }) {
             checked={!!seccion.mostrarTotal}
             onChange={(e) => updateField("mostrarTotal", e.target.checked)}
           />
-          <span className="toggle-text">Mostrar total de sección</span>
+          <span className="toggle-text">Poner total manualmente</span>
         </label>
         {seccion.mostrarTotal && (
           <div className="section-total-input-group">
@@ -361,7 +363,8 @@ function DocPreview ({ doc, company, pdfRef }) {
           <div className="doc-company-detail">TELÉFONO: {company.telefono}</div>
           <div className="doc-company-detail">{company.ciudad}</div>
         </div>
-        <div className="doc-title-block">
+        <div className="doc-title-block" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <img src={LOGO_BASE64} alt="Logo" style={{ width: "250px", height: "auto", marginBottom: "0.5rem" }} />
           <h1 className="doc-title">{titulo} {doc.numero}</h1>
         </div>
       </div>
@@ -1049,7 +1052,7 @@ function Historial ({ docs, company, onEdit, onDelete }) {
 // ─── Resumen ────────────────────────────────────────────
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-function Resumen ({ docs }) {
+function Resumen ({ docs, gastos = [] }) {
   const facturas = docs.filter((d) => d.tipo === "factura");
   const presupuestos = docs.filter((d) => d.tipo === "presupuesto");
 
@@ -1134,6 +1137,9 @@ function Resumen ({ docs }) {
           <button className={`tab-btn ${vista === "anual" ? "active" : ""}`} onClick={() => setVista("anual")}>
             📆 Anual
           </button>
+          <button className={`tab-btn ${vista === "impuestos" ? "active" : ""}`} onClick={() => setVista("impuestos")}>
+            🏛️ Impuestos (303 / 130)
+          </button>
         </div>
         {vista === "mensual" && (
           <select className="form-select" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ width: "auto" }}>
@@ -1211,7 +1217,7 @@ function Resumen ({ docs }) {
             </div>
           </div>
         </div>
-      ) : (
+      ) : vista === "anual" ? (
         <div className="resumen-table-container">
           {annualData.length === 0 ? (
             <div className="empty-state" style={{ marginTop: "1rem" }}>
@@ -1245,7 +1251,555 @@ function Resumen ({ docs }) {
             </table>
           )}
         </div>
-      )}
+      ) : vista === "impuestos" ? (
+        <ImpuestosView facturas={facturas} gastos={gastos} selectedYear={selectedYear} allYears={allYears} setSelectedYear={setSelectedYear} />
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Vista de Impuestos (303 / 130) ────────────────────
+function ImpuestosView ({ facturas, gastos, selectedYear, allYears, setSelectedYear }) {
+  const [trimestre, setTrimestre] = useState(() => {
+    const m = new Date().getMonth();
+    if (m < 3) return "T1";
+    if (m < 6) return "T2";
+    if (m < 9) return "T3";
+    return "T4";
+  });
+  const [pdfMsg, setPdfMsg] = useState("");
+
+  const TRIMESTRES = {
+    T1: { label: "1er Trimestre (Ene - Mar)", meses: ["01", "02", "03"], plazo: "1-20 Abril", periodo: "1T" },
+    T2: { label: "2º Trimestre (Abr - Jun)", meses: ["04", "05", "06"], plazo: "1-20 Julio", periodo: "2T" },
+    T3: { label: "3er Trimestre (Jul - Sep)", meses: ["07", "08", "09"], plazo: "1-20 Octubre", periodo: "3T" },
+    T4: { label: "4º Trimestre (Oct - Dic)", meses: ["10", "11", "12"], plazo: "1-30 Enero (año siguiente)", periodo: "4T" },
+  };
+
+  const tri = TRIMESTRES[trimestre];
+
+  // Filter by trimester
+  const facTri = facturas.filter((d) => {
+    if (!d.fecha?.startsWith(selectedYear)) return false;
+    const mes = d.fecha.split("-")[1];
+    return tri.meses.includes(mes);
+  });
+
+  const gastosTri = gastos.filter((g) => {
+    if (!g.fecha?.startsWith(selectedYear)) return false;
+    const mes = g.fecha.split("-")[1];
+    return tri.meses.includes(mes);
+  });
+
+  // ── MODELO 303 (IVA) — Cálculo completo según formulario oficial ──
+
+  // Facturas agrupadas por tipo de IVA (devengado = lo que cobras)
+  const facByIva = (rate) => facTri.filter((d) => d.iva === rate);
+
+  // ═══ IVA DEVENGADO — Régimen general ═══
+  // Casillas 150-152: Tipo 0% (exento con derecho a deducción - raro)
+  const c150 = 0; const c152 = 0;
+  // Casillas 165-167: Tipo 5% (alimentos básicos desde 2023)
+  const c165 = facByIva(5).reduce((s, d) => s + (d.subtotal || 0), 0);
+  const c167 = facByIva(5).reduce((s, d) => s + (d.ivaAmt || 0), 0);
+  // Casillas 01-03: Tipo 4% superreducido
+  const c01 = facByIva(4).reduce((s, d) => s + (d.subtotal || 0), 0);
+  const c03 = facByIva(4).reduce((s, d) => s + (d.ivaAmt || 0), 0);
+  // Casillas 153-155: Tipo 7,5% (algunas entregas de energía)
+  const c153 = 0; const c155 = 0;
+  // Casillas 04-06: Tipo 10% reducido
+  const c04 = facByIva(10).reduce((s, d) => s + (d.subtotal || 0), 0);
+  const c06 = facByIva(10).reduce((s, d) => s + (d.ivaAmt || 0), 0);
+  // Casillas 07-09: Tipo 21% general
+  const c07 = facByIva(21).reduce((s, d) => s + (d.subtotal || 0), 0);
+  const c09 = facByIva(21).reduce((s, d) => s + (d.ivaAmt || 0), 0);
+
+  // Adquisiciones intracomunitarias
+  const c10 = 0; const c11 = 0;
+  // Inversión del sujeto pasivo
+  const c12 = 0; const c13 = 0;
+  // Modificación de bases y cuotas
+  const c14 = 0; const c15 = 0;
+
+  // Recargo de equivalencia
+  const c156 = 0; const c158 = 0; // 1,75%
+  const c168 = 0; const c170 = 0; // 0,50%
+  const c16 = 0; const c17 = 0; const c18 = 0; // 0,625%
+  const c19 = 0; const c21 = 0; // 1,40%
+  const c22 = 0; const c24 = 0; // 5,20%
+  const c25 = 0; const c26 = 0; // rectificaciones recargo
+
+  // Casilla 27: TOTAL CUOTA DEVENGADA
+  const c27 = c152 + c167 + c03 + c155 + c06 + c09 + c11 + c13 + c15 + c158 + c170 + c18 + c21 + c24 + c26;
+
+  // ═══ IVA DEDUCIBLE ═══
+  const c28 = gastosTri.reduce((s, g) => s + (g.base || 0) * ((g.pctDeducible || 100) / 100), 0);
+  const c29 = gastosTri.reduce((s, g) => s + (g.iva || 0) * ((g.pctDeducible || 100) / 100), 0);
+  const c30 = 0; const c31 = 0; // bienes inversión
+  const c32 = 0; const c33 = 0; // importaciones corrientes
+  const c34 = 0; const c35 = 0; // importaciones bienes inversión
+  const c36 = 0; const c37 = 0; // intracomunitarias corrientes
+  const c38 = 0; const c39 = 0; // intracomunitarias inversión
+  const c40 = 0; const c41 = 0; // rectificación deducciones
+  const c42 = 0; // compensaciones REA
+  const c43 = 0; // regularización bienes inversión
+  const c44 = 0; // regularización prorrata
+
+  // Casilla 45: TOTAL A DEDUCIR
+  const c45 = c29 + c31 + c33 + c35 + c37 + c39 + c41 + c42 + c43 + c44;
+
+  // Casilla 46: RESULTADO RÉGIMEN GENERAL
+  const c46 = c27 - c45;
+
+  // ═══ RESULTADO (Página 3 del formulario oficial) ═══
+  // Información adicional
+  const c59 = 0; // Entregas intracomunitarias
+  const c60 = 0; // Exportaciones
+  const c120 = 0; // Operaciones no sujetas por reglas de localización
+  const c122 = 0; // Operaciones con inversión del sujeto pasivo
+  const c123 = 0; // Operaciones no sujetas acogidas regímenes ventanilla única
+  const c124 = 0; // Operaciones sujetas y acogidas ventanilla única
+  // Criterio de caja
+  const c62 = 0; const c63 = 0; const c74 = 0; const c75 = 0;
+  // Regularización cuotas
+  const c76 = 0;
+  // Casilla 64: Suma de resultados (46 + 58 + 76) — 58 es régimen simplificado, 0 para tu padre
+  const c64 = c46 + 0 + c76;
+  // Casilla 65: % atribuible al Estado (100% salvo País Vasco/Navarra)
+  const c65 = 100;
+  const c66 = c64 * (c65 / 100); // Resultado atribuible
+  // Casilla 77: IVA a la importación liquidado por Aduanas
+  const c77 = 0;
+  // Casilla 110: Cuotas a compensar de periodos anteriores aplicadas
+  const c110 = 0;
+  // Casilla 78: Cuotas a compensar de períodos anteriores pendientes
+  const c78 = 0;
+  // Casilla 87: Cuotas a compensar de periodos previos pendientes para periodos posteriores
+  const c87 = c110 - c78;
+  // Casilla 68: Regularización anual (solo Haciendas Forales)
+  const c68 = 0;
+  // Casilla 108: Otros ajustes
+  const c108 = 0;
+  // Casilla 69: Resultado de la autoliquidación
+  // Fórmula oficial PDF: 66 + 77 + 78 + 68 + 108
+  const c69 = c66 + c77 + c78 + c68 + c108;
+  // Casilla 70: Resultado a ingresar de anterior autoliquidación (rectificativa)
+  const c70 = 0;
+  // Casilla 109: Devoluciones anteriores
+  const c109 = 0;
+  // Casilla 112: Entregas gasolinas
+  const c112 = 0;
+  // Casilla 71: RESULTADO FINAL
+  // Fórmula oficial PDF: 69 − 70 + 109
+  const c71 = c69 - c70 + c109;
+  // Casilla 72: Si 71 es negativo → a compensar
+  const c72 = c71 < 0 ? Math.abs(c71) : 0;
+
+  // ══════════════════════════════════════════════════════════
+  // MODELO 130 — Según formulario OFICIAL Sede Electrónica
+  // https://www12.agenciatributaria.gob.es/wlpl/PAMW-M130/
+  // ══════════════════════════════════════════════════════════
+  const triIdx = ["T1", "T2", "T3", "T4"].indexOf(trimestre);
+  const mesesAcumulados = ["T1", "T2", "T3", "T4"].slice(0, triIdx + 1).flatMap((t) => TRIMESTRES[t].meses);
+
+  const facAcum = facturas.filter((d) => {
+    if (!d.fecha?.startsWith(selectedYear)) return false;
+    return mesesAcumulados.includes(d.fecha.split("-")[1]);
+  });
+  const gastosAcum = gastos.filter((g) => {
+    if (!g.fecha?.startsWith(selectedYear)) return false;
+    return mesesAcumulados.includes(g.fecha.split("-")[1]);
+  });
+
+  // I. Actividades económicas en estimación directa (datos acumulados)
+  const m130_01 = facAcum.reduce((s, d) => s + (d.subtotal || 0), 0);
+  const m130_02 = gastosAcum.reduce((s, g) => s + (g.base || 0) * ((g.pctDeducible || 100) / 100), 0);
+  const m130_03 = m130_01 - m130_02;
+  const m130_04 = m130_03 > 0 ? m130_03 * 0.20 : 0;
+
+  // Calcular pago fraccionado previo de cada trimestre anterior
+  const calcPagoTrimestrePrevio = (triIndex) => {
+    // Recalcula lo que se habría pagado en el trimestre triIndex
+    const msAcum = ["T1", "T2", "T3", "T4"].slice(0, triIndex + 1).flatMap((t) => TRIMESTRES[t].meses);
+    const ingAcum = facturas.filter((d) => d.fecha?.startsWith(selectedYear) && msAcum.includes(d.fecha.split("-")[1])).reduce((s, d) => s + (d.subtotal || 0), 0);
+    const gasAcum = gastos.filter((g) => g.fecha?.startsWith(selectedYear) && msAcum.includes(g.fecha.split("-")[1])).reduce((s, g) => s + (g.base || 0) * ((g.pctDeducible || 100) / 100), 0);
+    const rend = ingAcum - gasAcum;
+    return rend > 0 ? rend * 0.20 : 0;
+  };
+
+  // [05] = De trimestres anteriores: suma de importes positivos de [07] menos suma de [16]
+  // Simplificado: pagos fraccionados previos acumulados (sin deducciones vivienda)
+  const m130_05 = triIdx > 0 ? calcPagoTrimestrePrevio(triIdx - 1) : 0;
+  // [06] = Retenciones e ingresos a cuenta soportados (acumulados)
+  const m130_06 = 0;
+  // [07] = Pago fraccionado previo del trimestre ([04]-[05]-[06])
+  const m130_07 = Math.max(0, m130_04 - m130_05 - m130_06);
+
+  // II. Actividades agrícolas, ganaderas, forestales y pesqueras (no aplica)
+  const m130_08 = 0;
+  const m130_09 = 0; // 2% de [08]
+  const m130_10 = 0; // Retenciones
+  const m130_11 = 0; // Pago fraccionado previo ([09]-[10])
+
+  // III. Total liquidación
+  // [12] = Suma pagos fraccionados previos ([07]+[11]). Si negativo, poner 0
+  const m130_12 = Math.max(0, m130_07 + m130_11);
+  // [13] = Minoración por deducción art. 110.3 c) Reglamento IRPF
+  const m130_13 = 0;
+  // [14] = Diferencia ([12]-[13]). Si negativa, con signo menos
+  const m130_14 = m130_12 - m130_13;
+  // [15] = Resultados negativos de trimestres anteriores
+  const m130_15 = 0;
+  // [16] = Deducción vivienda habitual: 2% de [03] (máx 660,14€/trim) o 2% de [08]
+  const m130_16 = 0; // Solo aplica si préstamo anterior a 2013
+  // [17] = Total ([14]-[15]-[16])
+  const m130_17 = m130_14 - m130_15 - m130_16;
+  // [18] = Resultado a ingresar de anteriores autoliquidaciones (mismo concepto/ejercicio/período)
+  const m130_18 = 0;
+  // [19] = Resultado de la autoliquidación ([17]-[18])
+  const m130_19 = m130_17 - m130_18;
+
+  // ── Estilos del formulario oficial ──
+  const greenHeader = { backgroundColor: "#4a7c3f", color: "#fff", fontWeight: 700, fontSize: "0.78rem", letterSpacing: "0.03em", padding: "0.5rem 0.6rem" };
+  const greenSubHeader = { backgroundColor: "#e8f0e5", fontWeight: 600, fontSize: "0.76rem", color: "#2d5a27", padding: "0.35rem 0.6rem" };
+  const darkHeader = { backgroundColor: "#192335", color: "#EAEADF", fontWeight: 700, fontSize: "0.8rem", padding: "0.5rem 0.6rem" };
+  const zeroClr = { color: "#bbb" };
+  const valClr = (v) => v !== 0 ? {} : zeroClr;
+  const cellNum = { textAlign: "center", width: "2.8rem", fontWeight: 700, fontSize: "0.78rem", color: "#192335", padding: "0.35rem 0.3rem", borderRight: "1px solid #d0cfc4" };
+  const cellDesc = { fontSize: "0.78rem", color: "#3a4a5e", padding: "0.35rem 0.6rem" };
+  const cellTipo = { textAlign: "center", width: "3.5rem", fontSize: "0.78rem", padding: "0.35rem 0.3rem", borderLeft: "1px solid #d0cfc4" };
+  const cellVal = { textAlign: "right", width: "7rem", fontSize: "0.78rem", padding: "0.35rem 0.6rem", borderLeft: "1px solid #d0cfc4" };
+  const highlightBg = { backgroundColor: "#f7f6ef" };
+
+  const openPdf303 = async () => {
+    setPdfMsg("");
+    if (window.electronAPI?.openPdf) {
+      const r = await window.electronAPI.openPdf("modelo-303-limpio.pdf");
+      if (!r.success) setPdfMsg(r.error);
+    } else {
+      window.open("/modelo-303.pdf", "_blank");
+    }
+  };
+
+  // ── Row helpers ──
+  const R = ({ n, desc, val, tipo, hl, bold }) => (
+    <tr style={hl ? highlightBg : {}}>
+      <td style={cellNum}>{n}</td>
+      <td style={cellDesc}>{desc}</td>
+      {tipo !== undefined ? <td style={{ ...cellTipo, ...valClr(tipo) }}>{tipo === 0 ? "" : `${tipo}%`}</td> : <td style={cellTipo}></td>}
+      <td style={{ ...cellVal, fontWeight: bold ? 700 : 400, ...valClr(val) }}>{fmt(val)}</td>
+    </tr>
+  );
+  const R3 = ({ n, desc, val, hl, bold }) => (
+    <tr style={hl ? highlightBg : {}}>
+      <td style={cellNum}>{n}</td>
+      <td style={cellDesc}>{desc}</td>
+      <td style={{ ...cellVal, fontWeight: bold ? 700 : 400, ...valClr(val) }}>{fmt(val)}</td>
+    </tr>
+  );
+  const SH = ({ text, cols, style }) => (
+    <tr><td colSpan={cols || 4} style={style || greenHeader}>{text}</td></tr>
+  );
+  const Sub = ({ text, cols }) => (
+    <tr><td colSpan={cols || 4} style={greenSubHeader}>{text}</td></tr>
+  );
+  const TotalRow = ({ n, text, val, color }) => (
+    <tr style={{ backgroundColor: "#192335" }}>
+      <td style={{ ...cellNum, color: "#A0C7FF", borderRight: "1px solid #3a5a7e" }}>{n}</td>
+      <td colSpan={2} style={{ color: "#EAEADF", fontWeight: 700, fontSize: "0.82rem", padding: "0.5rem 0.6rem" }}>{text}</td>
+      <td style={{ textAlign: "right", color: color || "#A0C7FF", fontWeight: 700, fontSize: "0.9rem", padding: "0.5rem 0.6rem" }}>{fmt(val)}</td>
+    </tr>
+  );
+  const ResultRow = ({ n, text, val, positive }) => (
+    <tr style={{ backgroundColor: positive ? "#fef2f2" : "#ecfdf5", borderTop: "3px solid #192335" }}>
+      <td style={{ ...cellNum, fontWeight: 700, fontSize: "0.9rem" }}>{n}</td>
+      <td colSpan={2} style={{ fontWeight: 700, fontSize: "0.9rem", color: "#192335", padding: "0.5rem 0.6rem" }}>{text}</td>
+      <td style={{ textAlign: "right", fontWeight: 700, fontSize: "1rem", color: positive ? "#a33" : "#2d6a4f", padding: "0.5rem 0.6rem" }}>
+        {val < 0 ? "−" : ""}{fmt(Math.abs(val))} €
+      </td>
+    </tr>
+  );
+
+  return (
+    <div>
+      {/* ── Cabecera trimestre ── */}
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", alignItems: "center", flexWrap: "wrap" }}>
+        <select className="form-select" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ width: "auto" }}>
+          {allYears.length === 0 && <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>}
+          {allYears.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <div className="tabs-bar" style={{ marginBottom: 0 }}>
+          {Object.entries(TRIMESTRES).map(([key, val]) => (
+            <button key={key} className={`tab-btn ${trimestre === key ? "active" : ""}`} onClick={() => setTrimestre(key)}>
+              {key}
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: "0.8rem", color: "#5a6d85" }}>
+          Plazo presentación: <strong>{tri.plazo}</strong>
+        </span>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MODELO 303 — FORMULARIO OFICIAL COMPLETO
+          ═══════════════════════════════════════════════════════════ */}
+      <div className="form-section" style={{ marginBottom: "2rem", border: "2px solid #4a7c3f", borderRadius: "0.5rem", overflow: "hidden" }}>
+        {/* Cabecera tipo formulario oficial */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#EAEADF", padding: "0.8rem 1rem", borderBottom: "2px solid #4a7c3f" }}>
+          <div>
+            <div style={{ fontSize: "0.7rem", color: "#5a6d85" }}>Agencia Tributaria</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#192335" }}>Impuesto sobre el Valor Añadido</div>
+            <div style={{ fontSize: "0.78rem", color: "#3a4a5e" }}>Autoliquidación</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "2rem", fontWeight: 800, color: "#4a7c3f", lineHeight: 1 }}>303</div>
+            <div style={{ fontSize: "0.72rem", color: "#5a6d85" }}>Ejercicio {selectedYear} · Período {tri.periodo}</div>
+          </div>
+        </div>
+
+        {/* Botón ver PDF oficial */}
+        <div style={{ padding: "0.6rem 1rem", backgroundColor: "#f2f1e9", borderBottom: "1px solid #d0cfc4", display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button className="btn btn-outline" onClick={openPdf303} style={{ fontSize: "0.78rem", padding: "0.35rem 0.75rem" }}>
+            Ver formulario oficial en blanco (PDF)
+          </button>
+          <span style={{ fontSize: "0.75rem", color: "#5a6d85" }}>
+            Copia cada valor a la casilla correspondiente en sede.agenciatributaria.gob.es
+          </span>
+          {pdfMsg && <span style={{ fontSize: "0.75rem", color: "#a33" }}>{pdfMsg}</span>}
+        </div>
+
+        {/* ── Liquidación (3) ── */}
+        <div style={{ padding: "0 0.5rem 0.5rem" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #4a7c3f" }}>
+                  <th style={{ ...cellNum, backgroundColor: "#e8f0e5" }}></th>
+                  <th style={{ ...cellDesc, backgroundColor: "#e8f0e5", fontWeight: 600 }}>Concepto</th>
+                  <th style={{ ...cellTipo, backgroundColor: "#e8f0e5", fontWeight: 600 }}>Tipo %</th>
+                  <th style={{ ...cellVal, backgroundColor: "#e8f0e5", fontWeight: 600 }}>Cuota / Base</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* ── IVA DEVENGADO ── */}
+                <SH text="Liquidación (3) — IVA devengado · Régimen general" />
+
+                <R n="150" desc="Base imponible tipo 0% (exento con derecho a deducción)" val={c150} tipo={0} />
+                <R n="152" desc="Cuota" val={c152} />
+                <R n="165" desc="Base imponible tipo 5% (alimentos básicos)" val={c165} tipo={5} />
+                <R n="167" desc="Cuota" val={c167} />
+                <R n="01" desc="Base imponible tipo 4% (superreducido)" val={c01} tipo={4} />
+                <R n="03" desc="Cuota" val={c03} />
+                <R n="153" desc="Base imponible tipo 7,5%" val={c153} tipo={7.5} />
+                <R n="155" desc="Cuota" val={c155} />
+                <R n="04" desc="Base imponible tipo 10% (reducido)" val={c04} tipo={10} hl />
+                <R n="06" desc="Cuota" val={c06} hl />
+                <R n="07" desc="Base imponible tipo 21% (general)" val={c07} tipo={21} hl />
+                <R n="09" desc="Cuota" val={c09} hl />
+
+                <Sub text="Adquisiciones intracomunitarias de bienes y servicios" />
+                <R n="10" desc="Base imponible" val={c10} />
+                <R n="11" desc="Cuota" val={c11} />
+
+                <Sub text="Otras operaciones con inversión del sujeto pasivo (excepto adq. intracom.)" />
+                <R n="12" desc="Base imponible" val={c12} />
+                <R n="13" desc="Cuota" val={c13} />
+
+                <Sub text="Modificación bases y cuotas" />
+                <R n="14" desc="Base imponible" val={c14} />
+                <R n="15" desc="Cuota" val={c15} />
+
+                <SH text="Recargo de equivalencia (no aplica en construcción)" />
+                <R n="156" desc="Base imponible recargo 1,75%" val={c156} tipo={1.75} />
+                <R n="158" desc="Cuota" val={c158} />
+                <R n="168" desc="Base imponible recargo 0,50%" val={c168} tipo={0.5} />
+                <R n="170" desc="Cuota" val={c170} />
+                <R n="16" desc="Base imponible recargo 0,625%" val={c16} tipo={0.625} />
+                <R n="18" desc="Cuota" val={c18} />
+                <R n="19" desc="Base imponible recargo 1,40%" val={c19} tipo={1.4} />
+                <R n="21" desc="Cuota" val={c21} />
+                <R n="22" desc="Base imponible recargo 5,20%" val={c22} tipo={5.2} />
+                <R n="24" desc="Cuota" val={c24} />
+                <Sub text="Modificaciones bases y cuotas del recargo de equivalencia" />
+                <R n="25" desc="Base imponible" val={c25} />
+                <R n="26" desc="Cuota" val={c26} />
+
+                {/* TOTAL DEVENGADO */}
+                <TotalRow n="27" text="Total cuota devengada (152+167+03+155+06+09+11+13+15+158+170+18+21+24+26)" val={c27} />
+
+                {/* ── IVA DEDUCIBLE ── */}
+                <SH text="IVA deducible" />
+                <R n="28" desc="Por cuotas soportadas en operaciones interiores corrientes — Base" val={c28} hl />
+                <R n="29" desc="Cuota" val={c29} hl bold />
+                <R n="30" desc="Por cuotas soportadas en operaciones interiores con bienes de inversión — Base" val={c30} />
+                <R n="31" desc="Cuota" val={c31} />
+                <R n="32" desc="Por cuotas soportadas en las importaciones de bienes corrientes — Base" val={c32} />
+                <R n="33" desc="Cuota" val={c33} />
+                <R n="34" desc="Por cuotas soportadas en las importaciones de bienes de inversión — Base" val={c34} />
+                <R n="35" desc="Cuota" val={c35} />
+                <R n="36" desc="En adquisiciones intracomunitarias de bienes y servicios corrientes — Base" val={c36} />
+                <R n="37" desc="Cuota" val={c37} />
+                <R n="38" desc="En adquisiciones intracomunitarias de bienes de inversión — Base" val={c38} />
+                <R n="39" desc="Cuota" val={c39} />
+                <R n="40" desc="Rectificación de deducciones — Base" val={c40} />
+                <R n="41" desc="Cuota" val={c41} />
+                <R n="42" desc="Compensaciones Régimen Especial A.G. y P." val={c42} />
+                <R n="43" desc="Regularización bienes de inversión" val={c43} />
+                <R n="44" desc="Regularización por aplicación del porcentaje definitivo de prorrata" val={c44} />
+
+                <TotalRow n="45" text="Total a deducir (29+31+33+35+37+39+41+42+43+44)" val={c45} />
+
+                {/* RESULTADO RÉGIMEN GENERAL */}
+                <ResultRow n="46" text="Resultado régimen general (27 − 45)" val={c46} positive={c46 >= 0} />
+
+                {/* ═══ PÁGINA 3 — Información adicional + Resultado ═══ */}
+                <SH text="Información adicional" style={darkHeader} />
+                <R n="59" desc="Entregas intracomunitarias de bienes y servicios" val={c59} />
+                <R n="60" desc="Exportaciones y operaciones asimiladas" val={c60} />
+                <R n="120" desc="Operaciones no sujetas por reglas de localización (excepto casilla 123)" val={c120} />
+                <R n="122" desc="Operaciones sujetas con inversión del sujeto pasivo" val={c122} />
+                <R n="123" desc="Operaciones no sujetas acogidas a regímenes ventanilla única" val={c123} />
+                <R n="124" desc="Operaciones sujetas y acogidas a regímenes ventanilla única" val={c124} />
+
+                <Sub text="Régimen especial del criterio de caja (art. 75 LIVA)" />
+                <R n="62" desc="Importes devengados criterio de caja — Base imponible" val={c62} />
+                <R n="63" desc="Cuota" val={c63} />
+                <R n="74" desc="Importes adquisiciones criterio de caja — Base imponible" val={c74} />
+                <R n="75" desc="Cuota soportada" val={c75} />
+
+                {/* RESULTADO FINAL */}
+                <SH text="Resultado" style={darkHeader} />
+                <R n="76" desc="Regularización cuotas art. 80.Cinco.5ª LIVA" val={c76} />
+                <R n="64" desc="Suma de resultados (46 + 58 + 76)" val={c64} bold hl />
+                <tr style={highlightBg}>
+                  <td style={cellNum}>65</td>
+                  <td style={cellDesc}>% Atribuible a la Administración del Estado</td>
+                  <td style={{ ...cellTipo, fontWeight: 600 }}>{c65}%</td>
+                  <td style={cellVal}></td>
+                </tr>
+                <R n="66" desc="Resultado atribuible al Estado (casilla 64 × casilla 65%)" val={c66} bold hl />
+                <R n="77" desc="IVA a la importación liquidado por la Aduana pendiente de ingreso" val={c77} />
+                <R n="110" desc="Cuotas a compensar de periodos anteriores aplicadas en este periodo" val={c110} />
+                <R n="78" desc="Cuotas a compensar de períodos anteriores pendientes" val={c78} />
+                <R n="87" desc="Cuotas a compensar de periodos previos pendientes para periodos posteriores (110 − 78)" val={c87} />
+                <R n="68" desc="Resultado regularización anual (Haciendas Forales)" val={c68} />
+                <R n="108" desc="Otros ajustes (discrepancia criterio administrativo)" val={c108} />
+                <R n="69" desc="Resultado de la autoliquidación (66 + 77 + 78 + 68 + 108)" val={c69} bold hl />
+                <R n="70" desc="Resultado a ingresar de anterior autoliquidación o liquidación administrativa" val={c70} />
+                <R n="109" desc="Devoluciones acordadas por la Agencia Tributaria" val={c109} />
+                <R n="112" desc="Pago a cuenta entregas de gasolinas, gasóleos..." val={c112} />
+
+                {/* RESULTADO FINAL */}
+                <ResultRow n="71" text={"Resultado (69 − 70 + 109) = " + (c71 >= 0 ? "A INGRESAR" : "A COMPENSAR/DEVOLVER")} val={c71} positive={c71 >= 0} />
+
+                {c71 < 0 && (
+                  <>
+                    <SH text="Compensación (6)" style={{ ...greenHeader, backgroundColor: "#c0392b" }} />
+                    <R n="72" desc="Si el resultado [71] es negativo, importe a compensar" val={c72} bold />
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style={{ padding: "0.5rem 1rem", backgroundColor: "#f2f1e9", borderTop: "1px solid #d0cfc4", fontSize: "0.75rem", color: "#5a6d85" }}>
+          {facTri.length} factura(s) emitida(s) · {gastosTri.length} gasto(s) registrado(s) este trimestre ·
+          Las filas resaltadas son las que normalmente tendrán valores para un autónomo en construcción
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MODELO 130 — FORMULARIO COMPLETO
+          ═══════════════════════════════════════════════════════════ */}
+      <div className="form-section" style={{ marginBottom: "2rem", border: "2px solid #4a7c3f", borderRadius: "0.5rem", overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#EAEADF", padding: "0.8rem 1rem", borderBottom: "2px solid #4a7c3f" }}>
+          <div>
+            <div style={{ fontSize: "0.7rem", color: "#5a6d85" }}>Agencia Tributaria</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#192335" }}>IRPF — Pago fraccionado</div>
+            <div style={{ fontSize: "0.78rem", color: "#3a4a5e" }}>Empresarios y profesionales en estimación directa</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "2rem", fontWeight: 800, color: "#4a7c3f", lineHeight: 1 }}>130</div>
+            <div style={{ fontSize: "0.72rem", color: "#5a6d85" }}>Ejercicio {selectedYear} · Período {tri.periodo}</div>
+          </div>
+        </div>
+
+        <div style={{ padding: "0.6rem 1rem", backgroundColor: "#dbeafe", borderBottom: "1px solid #A0C7FF", fontSize: "0.78rem", color: "#192335" }}>
+          <strong>Recuerda:</strong> El Modelo 130 trabaja con datos ACUMULADOS desde el 1 de enero hasta el final del trimestre actual.
+        </div>
+
+        <div style={{ padding: "0 0.5rem 0.5rem" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #4a7c3f" }}>
+                  <th style={{ ...cellNum, backgroundColor: "#e8f0e5" }}></th>
+                  <th style={{ ...cellDesc, backgroundColor: "#e8f0e5", fontWeight: 600 }}>Concepto</th>
+                  <th style={{ ...cellVal, backgroundColor: "#e8f0e5", fontWeight: 600 }}>Importe (€)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <SH text="I. Actividades económicas en estimación directa (datos acumulados)" cols={3} />
+                <R3 n="01" desc={`Ingresos computables del ejercicio (acumulados Ene — ${tri.label.split("(")[1].split(")")[0].split(" - ")[1]})`} val={m130_01} hl bold />
+                <R3 n="02" desc="Gastos fiscalmente deducibles (acumulados, con % deducibilidad aplicado)" val={m130_02} hl bold />
+                <R3 n="03" desc="Rendimiento neto ([01] − [02])" val={m130_03} hl bold />
+                <R3 n="04" desc="20 por 100 de [03] (si [03] es negativo, consignar cero)" val={m130_04} hl bold />
+                <R3 n="05" desc="De los trimestres anteriores: suma de los importes positivos de [07] menos la suma de [16]" val={m130_05} hl={triIdx > 0} bold={triIdx > 0} />
+                <R3 n="06" desc="Retenciones e ingresos a cuenta soportados por actividades económicas (acumulados)" val={m130_06} />
+                <R3 n="07" desc="Pago fraccionado previo del trimestre ([04] − [05] − [06]). Si es negativo, consignar con signo menos" val={m130_07} hl bold />
+
+                <SH text="II. Actividades agrícolas, ganaderas, forestales y pesqueras en estimación directa (no aplica)" cols={3} />
+                <R3 n="08" desc="Volumen de ingresos del trimestre (incluidas subvenciones corrientes e indemnizaciones)" val={m130_08} />
+                <R3 n="09" desc="2 por 100 del volumen de ingresos del trimestre ([08] × 0,02)" val={m130_09} />
+                <R3 n="10" desc="Retenciones e ingresos a cuenta del trimestre a que se refiere [08]" val={m130_10} />
+                <R3 n="11" desc="Pago fraccionado previo del trimestre ([09] − [10]). Si es negativo, consignar con signo menos" val={m130_11} />
+
+                <SH text="III. Total liquidación" cols={3} style={darkHeader} />
+                <R3 n="12" desc="Suma de pagos fraccionados previos del trimestre ([07] + [11]). Si es negativo, consignar cero" val={m130_12} bold hl />
+                <R3 n="13" desc="Minoración por aplicación de la deducción art. 110.3 c) del Reglamento del IRPF" val={m130_13} />
+                <R3 n="14" desc="Diferencia ([12] − [13]). Si es negativa, consignar con signo menos" val={m130_14} bold />
+                <R3 n="15" desc="Resultados negativos de trimestres anteriores" val={m130_15} />
+                <R3 n="16" desc="Deducción art. 68.2.1.b) o 68.2.2 Ley IRPF (adquisición vivienda habitual, préstamo anterior a 01/01/2013)" val={m130_16} />
+                <R3 n="17" desc="Total ([14] − [15] − [16])" val={m130_17} bold hl />
+                <R3 n="18" desc="A deducir: resultado a ingresar de anteriores autoliquidaciones del mismo concepto, ejercicio y período" val={m130_18} />
+              </tbody>
+              <tfoot>
+                <tr style={{ backgroundColor: m130_19 > 0 ? "#fef2f2" : "#ecfdf5", borderTop: "3px solid #192335" }}>
+                  <td style={{ ...cellNum, fontWeight: 700, fontSize: "0.9rem" }}>19</td>
+                  <td style={{ fontWeight: 700, fontSize: "0.9rem", color: "#192335", padding: "0.5rem 0.6rem" }}>
+                    {m130_19 > 0 ? "RESULTADO DE LA AUTOLIQUIDACIÓN ([17] − [18])" : "RESULTADO: SIN PAGO ESTE TRIMESTRE ([17] − [18])"}
+                  </td>
+                  <td style={{ textAlign: "right", fontWeight: 700, fontSize: "1rem", color: m130_19 > 0 ? "#a33" : "#2d6a4f", padding: "0.5rem 0.6rem" }}>
+                    {fmt(m130_19)} €
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div style={{ padding: "0.5rem 1rem", backgroundColor: "#f2f1e9", borderTop: "1px solid #d0cfc4", fontSize: "0.75rem", color: "#5a6d85" }}>
+          Datos acumulados: {facAcum.length} factura(s) · {gastosAcum.length} gasto(s) desde enero {selectedYear}
+        </div>
+      </div>
+
+      {/* ═══ Guía paso a paso ═══ */}
+      <div style={{ padding: "1.2rem", backgroundColor: "#f2f1e9", borderRadius: "0.5rem", border: "1px solid #c5c4b8" }}>
+        <p style={{ fontSize: "0.9rem", color: "#192335", fontWeight: 700, marginBottom: "0.75rem" }}>CÓMO PRESENTAR EN HACIENDA</p>
+        <div style={{ fontSize: "0.82rem", color: "#3a4a5e", lineHeight: 1.7 }}>
+          <p style={{ marginBottom: "0.5rem" }}><strong>1.</strong> Entra en <strong>sede.agenciatributaria.gob.es</strong> con certificado digital o Cl@ve PIN</p>
+          <p style={{ marginBottom: "0.5rem" }}><strong>2.</strong> Ve a <strong>"Impuestos y tasas" → "IVA" → "Modelo 303"</strong> (o "IRPF" → "Modelo 130")</p>
+          <p style={{ marginBottom: "0.5rem" }}><strong>3.</strong> Selecciona el ejercicio (<strong>{selectedYear}</strong>) y el período (<strong>{tri.periodo}</strong>)</p>
+          <p style={{ marginBottom: "0.5rem" }}><strong>4.</strong> Copia cada importe de LISA a la casilla correspondiente en la web</p>
+          <p style={{ marginBottom: "0.5rem" }}><strong>5.</strong> Las casillas en gris con 0,00 se dejan en blanco o con 0</p>
+          <p style={{ marginBottom: "0" }}><strong>6.</strong> Revisa el resumen, firma electrónicamente y envía. <strong>Guarda el justificante PDF</strong></p>
+        </div>
+      </div>
+
+      <div style={{ marginTop: "0.75rem", padding: "0.8rem", backgroundColor: "#fff9e6", borderRadius: "0.4rem", border: "1px solid #e6d370", fontSize: "0.75rem", color: "#665a10" }}>
+        <strong>Aviso:</strong> LISA calcula estos importes automáticamente a partir de tus facturas y gastos registrados. Verifica siempre que todos los datos estén completos y correctos antes de presentar. LISA es una herramienta de ayuda, no sustituye el asesoramiento fiscal profesional.
+      </div>
     </div>
   );
 }
@@ -1494,6 +2048,267 @@ function Config ({ company, setCompany, onImportData }) {
   );
 }
 
+// ─── Gastos Deducibles ─────────────────────────────────
+const CATEGORIAS_GASTOS = [
+  "Materiales de obra",
+  "Herramientas",
+  "Gasolina / Vehículo",
+  "Teléfono móvil",
+  "Ropa de trabajo",
+  "Seguros",
+  "Alquiler maquinaria",
+  "Dietas / Comidas",
+  "Suministros (luz, agua, internet)",
+  "Cuota de autónomo",
+  "Formación profesional",
+  "Alquiler local/oficina",
+  "Gestoría / Asesoría",
+  "Material de oficina",
+  "Transporte / Desplazamiento",
+  "Subcontrataciones",
+  "Otros",
+];
+
+// Porcentajes deducibles por ley para ciertas categorías
+const DEDUCIBILIDAD = {
+  "Gasolina / Vehículo": 50,
+  "Teléfono móvil": 50,
+  "Suministros (luz, agua, internet)": 30,
+};
+
+function Gastos ({ gastos, setGastos }) {
+  const [filtro, setFiltro] = useState("");
+  const [catFiltro, setCatFiltro] = useState("Todas");
+  const [editando, setEditando] = useState(null);
+  const [nuevo, setNuevo] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [form, setForm] = useState({
+    fecha: new Date().toISOString().split("T")[0],
+    proveedor: "",
+    concepto: "",
+    categoria: "Materiales de obra",
+    base: 0,
+    tipoIva: 21,
+    iva: 0,
+    total: 0,
+    numFactura: "",
+  });
+
+  const categorias = ["Todas", ...CATEGORIAS_GASTOS];
+
+  const calcTotal = (base, tipoIva) => {
+    const ivaAmt = base * (tipoIva / 100);
+    return { iva: ivaAmt, total: base + ivaAmt };
+  };
+
+  const updateBase = (base) => {
+    const { iva, total } = calcTotal(base, form.tipoIva);
+    setForm({ ...form, base, iva, total });
+  };
+
+  const updateTipoIva = (tipoIva) => {
+    const { iva, total } = calcTotal(form.base, tipoIva);
+    setForm({ ...form, tipoIva, iva, total });
+  };
+
+  const updateTotal = (total) => {
+    const base = total / (1 + form.tipoIva / 100);
+    const iva = total - base;
+    setForm({ ...form, base: Math.round(base * 100) / 100, iva: Math.round(iva * 100) / 100, total });
+  };
+
+  const filtered = gastos.filter((g) => {
+    const matchText = filtro === "" ||
+      g.proveedor.toLowerCase().includes(filtro.toLowerCase()) ||
+      g.concepto.toLowerCase().includes(filtro.toLowerCase()) ||
+      (g.numFactura || "").toLowerCase().includes(filtro.toLowerCase());
+    const matchCat = catFiltro === "Todas" || g.categoria === catFiltro;
+    return matchText && matchCat;
+  });
+
+  const resetForm = () => setForm({
+    fecha: new Date().toISOString().split("T")[0],
+    proveedor: "", concepto: "", categoria: "Materiales de obra",
+    base: 0, tipoIva: 21, iva: 0, total: 0, numFactura: "",
+  });
+
+  const handleSave = () => {
+    const pctDeducible = DEDUCIBILIDAD[form.categoria] || 100;
+    const gasto = { ...form, pctDeducible };
+    if (editando !== null) {
+      setGastos((prev) => prev.map((g) => (g.id === editando ? { ...gasto, id: editando } : g)));
+      setEditando(null);
+    } else {
+      setGastos((prev) => [...prev, { ...gasto, id: Date.now() }]);
+    }
+    resetForm();
+    setNuevo(false);
+  };
+
+  const handleEdit = (gasto) => {
+    setForm({
+      fecha: gasto.fecha, proveedor: gasto.proveedor, concepto: gasto.concepto,
+      categoria: gasto.categoria, base: gasto.base, tipoIva: gasto.tipoIva,
+      iva: gasto.iva, total: gasto.total, numFactura: gasto.numFactura || "",
+    });
+    setEditando(gasto.id);
+    setNuevo(true);
+  };
+
+  const handleDelete = (id) => {
+    setGastos((prev) => prev.filter((g) => g.id !== id));
+    setConfirmDelete(null);
+  };
+
+  const handleCancel = () => { resetForm(); setEditando(null); setNuevo(false); };
+
+  // Totals
+  const totalGastos = gastos.reduce((s, g) => s + (g.total || 0), 0);
+  const totalIvaSoportado = gastos.reduce((s, g) => s + ((g.iva || 0) * ((g.pctDeducible || 100) / 100)), 0);
+
+  return (
+    <div>
+      <div className="form-header">
+        <div>
+          <h2 className="page-title">Gastos Deducibles</h2>
+          <p className="page-subtitle">{gastos.length} gasto(s) registrado(s) — Total: {fmt(totalGastos)} € — IVA deducible: {fmt(totalIvaSoportado)} €</p>
+        </div>
+        {!nuevo && (
+          <button className="btn btn-primary" onClick={() => setNuevo(true)}>+ Nuevo gasto</button>
+        )}
+      </div>
+
+      {/* Add/Edit form */}
+      {nuevo && (
+        <div className="form-section">
+          <h3>{editando ? "Editar gasto" : "Nuevo gasto"}</h3>
+          <div className="form-grid-3">
+            <div>
+              <label className="form-label">Fecha</label>
+              <input type="date" className="form-input" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
+            </div>
+            <div>
+              <label className="form-label">Nº Factura / Ticket</label>
+              <input className="form-input" placeholder="F-2024-001" value={form.numFactura} onChange={(e) => setForm({ ...form, numFactura: e.target.value })} />
+            </div>
+            <div>
+              <label className="form-label">Categoría</label>
+              <select className="form-select" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+                {CATEGORIAS_GASTOS.map((c) => (
+                  <option key={c} value={c}>{c} {DEDUCIBILIDAD[c] ? `(${DEDUCIBILIDAD[c]}% deducible)` : ""}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="form-label">Proveedor</label>
+              <input className="form-input" placeholder="Leroy Merlin, Repsol, Vodafone..." value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value })} />
+            </div>
+            <div>
+              <label className="form-label">IVA (%)</label>
+              <select className="form-select" value={form.tipoIva} onChange={(e) => updateTipoIva(parseInt(e.target.value))}>
+                <option value={21}>21% (General)</option>
+                <option value={10}>10% (Reducido)</option>
+                <option value={4}>4% (Superreducido)</option>
+                <option value={0}>0% (Exento)</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="form-label">Concepto / Descripción</label>
+              <input className="form-input" placeholder="Baldosas para obra C/ Aragón, gasolina, etc." value={form.concepto} onChange={(e) => setForm({ ...form, concepto: e.target.value })} />
+            </div>
+          </div>
+          <div className="form-grid-3" style={{ marginTop: "1rem" }}>
+            <div>
+              <label className="form-label">Base imponible (€)</label>
+              <input type="number" min="0" step="0.01" className="form-input" value={form.base} onChange={(e) => updateBase(parseFloat(e.target.value) || 0)} />
+            </div>
+            <div>
+              <label className="form-label">IVA (€)</label>
+              <input type="number" className="form-input" value={form.iva} readOnly style={{ backgroundColor: "#f2f1e9" }} />
+            </div>
+            <div>
+              <label className="form-label">Total (€) — o escribe el total directamente</label>
+              <input type="number" min="0" step="0.01" className="form-input" value={form.total} onChange={(e) => updateTotal(parseFloat(e.target.value) || 0)} />
+            </div>
+          </div>
+          {DEDUCIBILIDAD[form.categoria] && (
+            <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#5a6d85", fontStyle: "italic" }}>
+              ⚠️ Esta categoría solo es deducible al {DEDUCIBILIDAD[form.categoria]}% según Hacienda. LISA aplicará el porcentaje automáticamente en los cálculos de impuestos.
+            </p>
+          )}
+          <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+            <button className="btn btn-outline" onClick={handleCancel}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={!form.concepto && !form.proveedor}>
+              {editando ? "Guardar cambios" : "Añadir gasto"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="catalogo-filters">
+        <input
+          className="form-input catalogo-search-input"
+          placeholder="Buscar por proveedor, concepto o nº factura..."
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+        />
+        <select className="form-select catalogo-cat-select" value={catFiltro} onChange={(e) => setCatFiltro(e.target.value)}>
+          {categorias.map((c) => (
+            <option key={c} value={c}>{c} {c !== "Todas" ? `(${gastos.filter(g => g.categoria === c).length})` : ""}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* List */}
+      {filtered.length === 0 ? (
+        <div className="empty-state" style={{ marginTop: "1rem" }}>
+          <div className="empty-icon">🧾</div>
+          <h3>No hay gastos {filtro || catFiltro !== "Todas" ? "que coincidan" : "registrados"}</h3>
+          <p>{filtro ? "Prueba con otra búsqueda" : "Registra tu primer gasto con el botón de arriba"}</p>
+        </div>
+      ) : (
+        <div className="clientes-list">
+          {[...filtered].reverse().map((g) => (
+            <div key={g.id} className="cliente-card">
+              <div className="cliente-info" style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.25rem" }}>
+                  <span className="badge factura" style={{ fontSize: "0.65rem" }}>{g.categoria}</span>
+                  <span className="cliente-nombre" style={{ marginBottom: 0 }}>{g.proveedor || "Sin proveedor"}</span>
+                  {g.numFactura && <span style={{ fontSize: "0.75rem", color: "#5a6d85" }}>#{g.numFactura}</span>}
+                </div>
+                <div className="cliente-detalles">
+                  <span>{g.concepto}</span>
+                  <span>Fecha: {g.fecha}</span>
+                  <span>Base: {fmt(g.base)} €</span>
+                  <span>IVA: {fmt(g.iva)} €</span>
+                  {g.pctDeducible && g.pctDeducible < 100 && (
+                    <span style={{ color: "#a33" }}>Deducible: {g.pctDeducible}%</span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                <span style={{ fontWeight: 700, fontSize: "1.05rem", color: "#192335", whiteSpace: "nowrap" }}>{fmt(g.total)} €</span>
+                <div className="cliente-actions">
+                  <button className="btn-table-action" onClick={() => handleEdit(g)}>✏️</button>
+                  {confirmDelete === g.id ? (
+                    <>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(g.id)}>Sí</button>
+                      <button className="btn btn-sm btn-outline" onClick={() => setConfirmDelete(null)}>No</button>
+                    </>
+                  ) : (
+                    <button className="btn-table-action btn-table-delete" onClick={() => setConfirmDelete(g.id)}>🗑</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Catálogo de Precios ────────────────────────────────
 function Catalogo ({ catalogo, setCatalogo }) {
   const [filtro, setFiltro] = useState("");
@@ -1637,6 +2452,7 @@ export default function App () {
   const [company, setCompany] = useState(INITIAL_COMPANY);
   const [catalogo, setCatalogo] = useState(CATALOGO_INICIAL);
   const [clientes, setClientes] = useState([]);
+  const [gastos, setGastos] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -1648,10 +2464,12 @@ export default function App () {
         const savedCompany = await window.electronAPI.storeGet("company");
         const savedCatalogo = await window.electronAPI.storeGet("catalogo");
         const savedClientes = await window.electronAPI.storeGet("clientes");
+        const savedGastos = await window.electronAPI.storeGet("gastos");
         if (savedDocs) setDocs(savedDocs);
         if (savedCompany) setCompany(savedCompany);
         if (savedCatalogo) setCatalogo(savedCatalogo);
         if (savedClientes) setClientes(savedClientes);
+        if (savedGastos) setGastos(savedGastos);
       }
       setLoaded(true);
     }
@@ -1678,6 +2496,11 @@ export default function App () {
     if (!loaded || !window.electronAPI) return;
     window.electronAPI.storeSet("clientes", clientes);
   }, [clientes, loaded]);
+
+  useEffect(() => {
+    if (!loaded || !window.electronAPI) return;
+    window.electronAPI.storeSet("gastos", gastos);
+  }, [gastos, loaded]);
 
   const addDoc = (doc) => {
     if (doc._editId) {
@@ -1707,14 +2530,16 @@ export default function App () {
     "nueva-factura": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "factura"} tipo="factura" onSave={addDoc} company={company} catalogo={catalogo} clientes={clientes} editingDoc={editingDoc && editingDoc.tipo === "factura" ? editingDoc : null} />,
     "nuevo-presupuesto": <DocForm key={editingDoc ? `edit-${editingDoc.id}` : "presupuesto"} tipo="presupuesto" onSave={addDoc} company={company} catalogo={catalogo} clientes={clientes} editingDoc={editingDoc && editingDoc.tipo === "presupuesto" ? editingDoc : null} />,
     clientes: <Clientes clientes={clientes} setClientes={setClientes} />,
+    gastos: <Gastos gastos={gastos} setGastos={setGastos} />,
     catalogo: <Catalogo catalogo={catalogo} setCatalogo={setCatalogo} />,
     historial: <Historial docs={docs} company={company} onEdit={handleEdit} onDelete={handleDelete} />,
-    resumen: <Resumen docs={docs} />,
+    resumen: <Resumen docs={docs} gastos={gastos} />,
     config: <Config company={company} setCompany={setCompany} onImportData={(data) => {
       if (data.docs) setDocs(data.docs);
       if (data.company) setCompany(data.company);
       if (data.catalogo) setCatalogo(data.catalogo);
       if (data.clientes) setClientes(data.clientes);
+      if (data.gastos) setGastos(data.gastos);
     }} />,
   };
 

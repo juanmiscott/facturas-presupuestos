@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   storeSet: (key, value) => ipcRenderer.invoke("store-set", key, value),
   exportData: () => ipcRenderer.invoke("export-data"),
   importData: () => ipcRenderer.invoke("import-data"),
+  openPdf: (filename) => ipcRenderer.invoke("open-pdf", filename),
 });
